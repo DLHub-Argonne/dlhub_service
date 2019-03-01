@@ -1,0 +1,10 @@
+flask
+psycopg2
+psycopg2-binary
+zmq
+numpy
+boto3
+dlhub_cli
+dlhub_sdk
+globus_sdk
+pygithub
