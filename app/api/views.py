@@ -1,5 +1,6 @@
 import jsonpickle
 import pickle
+import boto3
 import json
 import time
 import os
@@ -38,7 +39,8 @@ def _perform_invocation(servable_uuid, request, type='test'):
     if not request.json:
         abort(400, description="Error: Requires JSON input.")
     if not site:
-        abort(400, description="Permission denied. Cannot access servable {0}".format(servable_uuid))
+        abort(400, description="Permission denied. Cannot access servable {0}".format(
+            servable_uuid))
     input_data = request.json
     print(input_data)
     exec_flag = 0
@@ -67,7 +69,8 @@ def _perform_invocation(servable_uuid, request, type='test'):
         response = pickle.loads(res)
         request_end = time.time()
 
-        _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, type)
+        _log_invocation(cur, conn, response, request_start,
+                        request_end, servable_uuid, user_id, data, type)
 
     except Exception as e:
         print("Failed to perform invocation %s" % e)
@@ -78,7 +81,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
 
     try:
         response_list = _decode_result(response['response'])
-        
+
         return json.dumps(response_list)
     except Exception as e:
         print("Failed to return output %s" % e)
@@ -153,7 +156,7 @@ def publish_servables():
     if not request.json:
         try:
             posted_file = request.files['file']
-            posted_data = json.load(request.files['json'])             
+            posted_data = json.load(request.files['json'])
             storage_path = os.path.join("/mnt/tmp", secure_filename(posted_file.filename))
             posted_file.save(storage_path)
             input_data = posted_data
@@ -335,4 +338,3 @@ def get_namespaces():
         abort(400, description="Error: You must be logged in to perform this function.")
     res = {'namespace': short_name}
     return json.dumps(res)
-

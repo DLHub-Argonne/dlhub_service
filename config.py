@@ -24,8 +24,9 @@ def _get_db_connection():
     """
     Establish a database connection
     """
-    con_str = "dbname={dbname} user={dbuser} password={dbpass} host={dbhost}".format(dbname=DB_NAME, dbuser=DB_USER,
-                                                                                     dbpass=DB_PASSWORD, dbhost=DB_HOST)
+    con_str = "dbname={dbname} user={dbuser} " \
+              "password={dbpass} host={dbhost}".format(dbname=DB_NAME, dbuser=DB_USER,
+                                                       dbpass=DB_PASSWORD, dbhost=DB_HOST)
 
     conn = psycopg2.connect(con_str)
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

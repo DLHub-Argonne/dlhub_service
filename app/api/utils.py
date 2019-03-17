@@ -5,7 +5,7 @@ import uuid
 import json
 
 from config import _load_dlhub_client, GIT_TOKEN
-from flask import request, abort
+from flask import request
 from github import Github
 
 
@@ -86,9 +86,9 @@ def _log_invocation(cur, conn, response, request_start, request_end, servable_uu
         if 'invocation_time' in response:
             invocation_time = response['invocation_time']
         request_time = (request_end - request_start) * 1000
-        query = "INSERT INTO invocation_logs (servable, input, invocation, request, function, user_id) values ('{}', '{}', {}, " \
-                "{}, '{}', {})".format(
-            servable_uuid, len(input_data), invocation_time, request_time, type, user_id)
+        query = "INSERT INTO invocation_logs (servable, input, invocation," \
+                " request, function, user_id) values ('{}', '{}', {}, {}, '{}', {})".format(
+                    servable_uuid, len(input_data), invocation_time, request_time, type, user_id)
         cur.execute(query)
         conn.commit()
     except Exception as e:
@@ -149,7 +149,8 @@ def _resolve_namespace_model(cur, conn, namespace, model_name):
     """
     servable_uuid = None
     try:
-        command = ("SELECT * from servables where dlhub_name = '{}/{}' order by id desc limit 1".format(namespace, model_name))
+        command = (
+            "SELECT * from servables where dlhub_name = '{}/{}' order by id desc limit 1".format(namespace, model_name))
         print(command)
         cur.execute(command)
         rows = cur.fetchall()
@@ -186,9 +187,11 @@ def _get_user(cur, conn, headers):
                 short_name = r['namespace']
                 user_id = r['id']
         else:
-            short_name = "{name}_{org}".format(name=user_name.split("@")[0], org=user_name.split("@")[1].split(".")[0])
+            short_name = "{name}_{org}".format(name=user_name.split(
+                "@")[0], org=user_name.split("@")[1].split(".")[0])
             cmd = "INSERT into users (user_name, globus_name, namespace, globus_uuid) values "\
-                  "('{name}', '{globus}', '{short}', '{globus_uuid}') RETURNING id".format(name=user_name, globus=user_name, short=short_name, globus_uuid=user_id)
+                  "('{name}', '{globus}', '{short}', '{globus_uuid}') RETURNING id".format(
+                      name=user_name, globus=user_name, short=short_name, globus_uuid=user_id)
             cur.execute(cmd)
             conn.commit()
             user_id = cur.fetchone()[0]

@@ -37,4 +37,3 @@ if __name__ == "__main__":
 else:
     broker_thread = threading.Thread(name='broker_thread', target=start_broker, daemon=True)
     broker_thread.start()
-
