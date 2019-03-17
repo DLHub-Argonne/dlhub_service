@@ -8,3 +8,4 @@ dlhub_cli
 dlhub_sdk
 globus_sdk
 pygithub
+werkzeug
