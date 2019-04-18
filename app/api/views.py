@@ -68,9 +68,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
         obj = (exec_flag, site, data)
 
         # Manage asynchronous request
-        async_val = False
-        if 'asynchronous' in input_data:
-            async_val = input_data['asynchronous']
+        async_val = input_data.get('asynchronous', False)
 
         if async_val:
             task_uuid = str(uuid.uuid4())
@@ -294,7 +292,6 @@ def status(task_uuid):
         res = {'status': status}
 
         # If the task is using AWS step functions, check the status there
-        # TODO (lw): I'm not sure what this does
         if exec_arn:
             # Check sfn for status
             sfn_client = boto3.client('stepfunctions')
@@ -305,12 +302,13 @@ def status(task_uuid):
                 output = response['output']
                 res['output'] = output
 
-            # Update thes tatus in the database
+            # Update the status in the database
             query = "UPDATE tasks set status = '%s' where uuid = '%s'" % (status, task_uuid)
             cur.execute(query)
             conn.commit()
         # Otherwise, this is an async request
         else:
+            # TODO (lw): Should we delete large results after the user retrieves them?
             res = {'status': status, 'result': result}
         return json.dumps(res, default=str)
     except Exception as e:

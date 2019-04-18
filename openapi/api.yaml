@@ -180,3 +180,13 @@ paths:
           content:
             application/json:
               description: Results of the output, JSON-encoded
+        '202':
+          description: Asynchronous execution has started
+          content:
+            application/json:
+              schema:
+                properties:
+                  task_id:
+                    type: string
+                    format: uuid
+                    description: Task ID of the submission request
