@@ -1,0 +1,182 @@
+openapi: 3.0.0
+info:
+  title: DLHub REST API
+  description: REST API for interacting with the [Data and Learning Hub for Science](https://dlhub.org)
+  version: 0.1.0
+servers:
+  - url: "https://api.dlhub.org/api/v1"
+paths:
+  /namespace:
+    get:
+      summary: Get the user name of logged in user
+      responses:
+        '200':
+          description: Username of the logged in user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  namespace:
+                    type: string
+                    description: Namespace of the user
+  /publish:
+    post:
+      summary: Publish a servable to DLHub
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            description: Servable description with all required files
+            schema:
+              type: object
+              properties:
+                json:
+                  description: Servable description
+                  $ref: https://raw.githubusercontent.com/DLHub-Argonne/dlhub_schemas/master/schemas/servable.json#
+                file:
+                  description: ZIP file containing any content for the servable
+                  type: string
+                  format: binary
+                  content: application/zip
+          application/json:
+            description: Servable description without files
+            schema:
+              $ref: https://raw.githubusercontent.com/DLHub-Argonne/dlhub_schemas/master/schemas/servable.json#
+
+      responses:
+        '200':
+          description: Servable was successfully submitted to DLHub
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id:
+                    type: string
+                    format: uuid
+                    description: Task ID for DLHub servable
+  /publish_repo:
+    post:
+      summary: Create a servable from a GitHub repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                repository:
+                  type: string
+                  description: URL of a git repository
+      responses:
+        '200':
+          description: Servable was successfully submitted to DLHub
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id:
+                    type: string
+                    format: uuid
+                    description: Task ID for DLHub servable
+  /{task_id}/status:
+    get:
+      summary: Get the status of a servable
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: ID of task to be checked
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Status of requested task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: ['RUNNING', 'COMPLETE']
+  /servables:
+    get:
+      summary: Get a list of all servables available through DLHub
+      responses:
+        '200':
+          description: List of servables in DLHub
+          content:
+            application/json:
+              schema:
+                type: array
+                description: List of all servable names
+                items:
+                  type: string
+                  description: Shortname of DLHub servable
+
+  /servables/{servable_namespace}/{servable_name}:
+    delete:
+      summary: Delete a servable
+      parameters:
+        - name: servable_namespace
+          in: path
+          required: true
+          description: Username of the servable owner
+          schema:
+            type: string
+        - name: servable_name
+          in: path
+          required: true
+          description: Name of the servable
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful deletion
+
+  /servables/<servable_namespace>/<servable_name>/run:
+    post:
+      summary: Run a servable on new data
+      parameters:
+        - name: servable_namespace
+          in: path
+          required: true
+          description: Username of the servable owner
+          schema:
+            type: string
+        - name: servable_name
+          in: path
+          required: true
+          description: Name of the servable
+          schema:
+            type: string
+      requestBody:
+        description: Data to used as input into the model, any options for invoking it
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ascynchronous:
+                  type: boolean
+                  description: Whether to invoke the function asynchronously
+              oneOf:
+                - type: object
+                  properties:
+                    data:
+                      description: Data supplied as a JSON document
+                - type: object
+                  properties:
+                    python:
+                      type: object
+                      description: Data supplied as a Python object serialized using jsonpickle
+      responses:
+        '200':
+          description: Run completed successfully
+          content:
+            application/json:
+              description: Results of the output, JSON-encoded
