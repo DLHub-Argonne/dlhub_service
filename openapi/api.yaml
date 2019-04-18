@@ -103,6 +103,9 @@ paths:
                   status:
                     type: string
                     enum: ['RUNNING', 'COMPLETE']
+                  result:
+                    type: object
+                    description: Any results associated with this task
   /servables:
     get:
       summary: Get a list of all servables available through DLHub
