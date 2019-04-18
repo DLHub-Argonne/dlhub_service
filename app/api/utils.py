@@ -55,7 +55,7 @@ def _get_dlhub_file_from_github(repository):
 ############
 # Database #
 ############
-def _create_task(cur, conn, input_data, response, task_uuid):
+def _create_task(cur, conn, input_data, response, task_uuid, task_type='ingest', result=''):
     """
     Insert a task into the database.
 
@@ -65,8 +65,12 @@ def _create_task(cur, conn, input_data, response, task_uuid):
     :return:
     """
     try:
-        query = "INSERT INTO tasks (uuid, type, input, arn, status) values ('%s', 'ingest', '%s', '%s', 'RUNNING')" % (
-            task_uuid, json.dumps(input_data).replace("'", "''"), response['executionArn'])
+        arn_val = ''
+        if response:
+            if 'executionArn' in response:
+                arn_val = response['executionArn']
+        query = "INSERT INTO tasks (uuid, type, input, arn, status, result) values ('%s', '%s', '%s', '%s', 'RUNNING', '%s')" % (
+            task_uuid, task_type, json.dumps(input_data).replace("'", "''"), arn_val, result)
         cur.execute(query)
         conn.commit()
     except Exception as e:
