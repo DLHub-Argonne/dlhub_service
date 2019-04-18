@@ -7,7 +7,7 @@ SECRET_KEY = os.environ.get('secret_key')
 GLOBUS_KEY = os.environ.get('globus_key')
 GLOBUS_CLIENT = os.environ.get('globus_client')
 
-GIT_KEY = os.environ.get('git_token')
+GIT_TOKEN = os.environ.get('git_token')
 
 DB_HOST = os.environ.get('db_host')
 DB_USER = os.environ.get('db_user')

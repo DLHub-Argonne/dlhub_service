@@ -1,6 +1,5 @@
 import jsonpickle
 import pickle
-import boto3
 import json
 import time
 import os
@@ -39,8 +38,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
     if not request.json:
         abort(400, description="Error: Requires JSON input.")
     if not site:
-        abort(400, description="Permission denied. Cannot access servable {0}".format(
-            servable_uuid))
+        abort(400, description="Permission denied. Cannot access servable {0}".format(servable_uuid))
     input_data = request.json
     print(input_data)
     exec_flag = 0
@@ -69,8 +67,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
         response = pickle.loads(res)
         request_end = time.time()
 
-        _log_invocation(cur, conn, response, request_start,
-                        request_end, servable_uuid, user_id, data, type)
+        _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, type)
 
     except Exception as e:
         print("Failed to perform invocation %s" % e)
@@ -81,7 +78,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
 
     try:
         response_list = _decode_result(response['response'])
-
+        
         return json.dumps(response_list)
     except Exception as e:
         print("Failed to return output %s" % e)
@@ -115,29 +112,6 @@ def api_run(servable_uuid):
     return output
 
 
-# @api.route("/servables/<servable_uuid>/test", methods=['POST'])
-# def api_test(servable_uuid):
-#     """
-#     Invoke a servable with test data.
-#
-#     :param servable_uuid:
-#     :return:
-#     """
-#     output = _perform_invocation(servable_uuid, request, type='test')
-#     return output
-#
-#
-# @api.route("/servables/<servable_uuid>/test_cache", methods=['POST'])
-# def api_test_cache(servable_uuid):
-#     """
-#     Invoke a servable with test data and use the cache.
-#
-#     :param servable_uuid:
-#     :return:
-#     """
-#     output = _perform_invocation(servable_uuid, request, type='test_cache')
-#     return output
-
 
 ########################
 # SERVABLE PUBLICATION #
@@ -156,7 +130,7 @@ def publish_servables():
     if not request.json:
         try:
             posted_file = request.files['file']
-            posted_data = json.load(request.files['json'])
+            posted_data = json.load(request.files['json'])             
             storage_path = os.path.join("/mnt/tmp", secure_filename(posted_file.filename))
             posted_file.save(storage_path)
             input_data = posted_data
@@ -338,3 +312,32 @@ def get_namespaces():
         abort(400, description="Error: You must be logged in to perform this function.")
     res = {'namespace': short_name}
     return json.dumps(res)
+
+
+@api.route("/servables/<servable_namespace>/<servable_name>", methods=['DELETE'])
+def api_delete_servable(servable_namespace, servable_name):
+    """
+    Delete a servable
+
+    :param servable_uuid:
+    :return:
+    """
+    user_id, user_name, short_name = _get_user(cur, conn, request.headers)
+    if not user_name:
+        abort(400, description="Error: You must be logged in to perform this function.")
+
+    print("deleting namespaced servable")
+    print(servable_namespace)
+    print(servable_name)
+    servable_uuid = _resolve_namespace_model(cur, conn, servable_namespace, servable_name)
+    print(servable_uuid)
+    query = "update servables set status = 'DELETED' where uuid = '{0}'".format(servable_uuid)
+    print(query)
+    try:
+        cur.execute(query)
+        conn.commit()
+    except Exception as e:
+        print(e)
+        return json.dumps({"InternalError": e})
+
+    return json.dumps({'status': 'done'})
