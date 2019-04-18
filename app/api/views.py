@@ -15,7 +15,6 @@ from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
 
 
-
 from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
 
 conn, cur = _get_db_connection()
@@ -87,7 +86,6 @@ def _perform_invocation(servable_uuid, request, type='test'):
             request_end = time.time()
 
             _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
-
 
     except Exception as e:
         print("Failed to perform invocation %s" % e)
@@ -165,7 +163,6 @@ def api_run(servable_uuid):
     """
     output = _perform_invocation(servable_uuid, request, type='run')
     return output
-
 
 
 ########################
@@ -411,8 +408,9 @@ def api_delete_servable(servable_namespace, servable_name):
     """
     Delete a servable
 
-    :param servable_uuid:
-    :return:
+    Args:
+        servable_namespace (str): Namespace of servable
+        servable_name (str): Name of the servable
     """
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
