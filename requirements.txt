@@ -8,4 +8,5 @@ dlhub_cli
 dlhub_sdk
 globus_sdk
 pygithub
+werkzeug
 connexion[swagger-ui]>=2.2.0
