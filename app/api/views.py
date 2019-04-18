@@ -62,9 +62,9 @@ def _perform_invocation(servable_uuid, request, type='test'):
 
         # Manage asynchronous request
         async_val = False
-        #if 'asynchronous' in input_data:
-        #    async_val = input_data['asynchronous']
-        async_val = True
+        if 'asynchronous' in input_data:
+            async_val = input_data['asynchronous']
+        
         if async_val:
             task_uuid = str(uuid.uuid4())
             req_thread = threading.Thread(target=_async_invocation, args=(obj, task_uuid, servable_uuid, user_id, data, exec_flag))
