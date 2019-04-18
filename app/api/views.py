@@ -36,6 +36,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
     :param type:
     :return:
     """
+
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     site = _check_user_access(cur, conn, servable_uuid, user_name)
 
@@ -64,7 +65,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
         async_val = False
         if 'asynchronous' in input_data:
             async_val = input_data['asynchronous']
-        
+
         if async_val:
             task_uuid = str(uuid.uuid4())
             req_thread = threading.Thread(target=_async_invocation, args=(obj, task_uuid, servable_uuid, user_id, data, exec_flag))
@@ -89,7 +90,6 @@ def _perform_invocation(servable_uuid, request, type='test'):
 
     try:
         response_list = _decode_result(response['response'])
-        
         return json.dumps(response_list)
     except Exception as e:
         print("Failed to return output %s" % e)
@@ -370,13 +370,15 @@ def api_delete_servable(servable_namespace, servable_name):
     if not user_name:
         abort(400, description="Error: You must be logged in to perform this function.")
 
-    print("deleting namespaced servable")
-    print(servable_namespace)
-    print(servable_name)
     servable_uuid = _resolve_namespace_model(cur, conn, servable_namespace, servable_name)
-    print(servable_uuid)
+
+    query = "select * from servables here uuid = '{0}' and author = '{1}'".format(servable_uuid, user_id)
+    cur.execute(query)
+    rows = cur.fetchall()
+    if len(rows) == 0:
+        return json.dumps({'status':'Failed to delete: permission denied or no servable found.'})
+
     query = "update servables set status = 'DELETED' where uuid = '{0}'".format(servable_uuid)
-    print(query)
     try:
         cur.execute(query)
         conn.commit()
