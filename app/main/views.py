@@ -1,6 +1,4 @@
-from flask import (Flask, request, jsonify, Response, send_from_directory,
-                   abort, flash, redirect, render_template, session, url_for,
-                   Blueprint)
+from flask import request, flash, redirect, session, url_for, Blueprint
 
 from config import _load_dlhub_client, GLOBUS_CLIENT
 
@@ -42,8 +40,9 @@ def callback():
     # If there's no "code" query string parameter, we're in this route
     # starting a Globus Auth login flow.
     if 'code' not in request.args:
-        additional_authorize_params = (
-            {'signup': 1} if request.args.get('signup') else {})
+        # TODO (lw): Should this be used?
+        # additional_authorize_params = (
+        #    {'signup': 1} if request.args.get('signup') else {})
 
         auth_uri = client.oauth2_get_authorize_url()
         return redirect(auth_uri)
@@ -52,7 +51,7 @@ def callback():
         # and can start the process of exchanging an auth code for a token.
         code = request.args.get('code')
         tokens = client.oauth2_exchange_code_for_tokens(code)
-        id_token = tokens.decode_id_token(client)
+        # id_token = tokens.decode_id_token(client)
         session.update(
             tokens=tokens.by_resource_server,
             is_authenticated=True

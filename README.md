@@ -1,4 +1,5 @@
 # dlhub_service
+[![Build Status](https://travis-ci.org/DLHub-Argonne/dlhub_service.svg?branch=master)](https://travis-ci.org/DLHub-Argonne/dlhub_service)
 
 `dlhub_service` is the server used to host the web interface to the [Data and Learning Hub for Science (DLHub)](http://dlhub.og).
 The web server currently supports:

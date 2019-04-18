@@ -9,7 +9,7 @@ GLOBUS_KEY = os.environ.get('globus_key')
 GLOBUS_CLIENT = os.environ.get('globus_client')
 
 # GitHub-related secrets
-GIT_KEY = os.environ.get('git_token')
+GIT_TOKEN = os.environ.get('git_token')
 
 # Secrets related to the servable information database
 DB_HOST = os.environ.get('db_host')
@@ -32,8 +32,9 @@ def _get_db_connection():
         conn: Connection to database
         cur: Active cursor for querying the databases
     """
-    con_str = "dbname={dbname} user={dbuser} password={dbpass} host={dbhost}".format(dbname=DB_NAME, dbuser=DB_USER,
-                                                                                     dbpass=DB_PASSWORD, dbhost=DB_HOST)
+    con_str = "dbname={dbname} user={dbuser} " \
+              "password={dbpass} host={dbhost}".format(dbname=DB_NAME, dbuser=DB_USER,
+                                                       dbpass=DB_PASSWORD, dbhost=DB_HOST)
 
     conn = psycopg2.connect(con_str)
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

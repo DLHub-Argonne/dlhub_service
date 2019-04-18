@@ -1,15 +1,20 @@
 import jsonpickle
+import threading
 import pickle
 import boto3
 import json
+import uuid
 import time
 import os
 
 from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_model,
-                    _check_user_access, _log_invocation, _get_dlhub_file_from_github)
+                    _check_user_access, _log_invocation, _get_dlhub_file_from_github,
+                    _create_task)
 from flask import Blueprint, request, abort
 from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
+
+
 
 from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
 
@@ -33,7 +38,6 @@ def _perform_invocation(servable_uuid, request, type='test'):
         (str): JSON-formatted results of executing the servable
     """
 
-    # Get user credentials, ensure that user has proper access
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     site = _check_user_access(cur, conn, servable_uuid, user_name)
 
@@ -50,15 +54,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
     # Get the input data for the function
     input_data = request.json
 
-    # Determine the type of request
-    # TODO (lw): Are these legacy?
-    exec_flag = 0
-    if type == 'run':
-        exec_flag = 1
-    elif type == 'test':
-        exec_flag = 2
-    elif type == 'test_cache':
-        exec_flag = 3
+    exec_flag = 1
 
     # Perform the invocation
     try:
@@ -68,20 +64,30 @@ def _perform_invocation(servable_uuid, request, type='test'):
         elif 'python' in input_data:
             # TODO (lw): Is decoding in the web service dangerous? Should we push this to the shim?
             data = jsonpickle.decode(input_data['python'])
-            print('jsonpickle decoded')
 
         # Send request to service
         obj = (exec_flag, site, data)
-        request_start = time.time()
-        res = zmq_server.request(pickle.dumps(obj))
 
-        # Generate the request data
-        # TODO (lw): Is this also dangerous
-        response = pickle.loads(res)
-        request_end = time.time()
+        # Manage asynchronous request
+        async_val = False
+        if 'asynchronous' in input_data:
+            async_val = input_data['asynchronous']
 
-        # Log that this query occurred
-        _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, type)
+        if async_val:
+            task_uuid = str(uuid.uuid4())
+            req_thread = threading.Thread(target=_async_invocation, args=(obj, task_uuid, servable_uuid, user_id, data, exec_flag))
+            req_thread.start()
+            response = {"task_id": task_uuid}
+            return json.dumps(response)
+        else:
+            request_start = time.time()
+            # TODO (lw): Is this also dangerous
+            res = zmq_server.request(pickle.dumps(obj))
+            response = pickle.loads(res)
+            request_end = time.time()
+
+            _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
+
 
     except Exception as e:
         print("Failed to perform invocation %s" % e)
@@ -101,6 +107,34 @@ def _perform_invocation(servable_uuid, request, type='test'):
         print("Failed to return output %s" % e)
         # TODO (lw): Should these come back as a non-200 status?
         return json.dumps({"InternalError": "Failed to return output: %s" % e})
+
+
+def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
+    """
+    Perform an asynchronous invocation to a servable then update the database once the task completes.
+    """
+
+    _create_task(cur, conn, '', '', task_uuid, 'invocation', '')
+
+    request_start = time.time()
+    res = zmq_server.request(pickle.dumps(obj))
+    response = pickle.loads(res)
+    request_end = time.time()
+
+    _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
+
+    status = 'COMPLETED'
+
+    output = 'Error: Internal Service Error'
+    try:
+        response_list = _decode_result(response['response'])
+        output = json.dumps(response_list)
+    except Exception as e:
+        output = json.dumps({"InternalError": "Failed to return output: %s" % e})
+
+    query = "UPDATE tasks set status = '%s', result = '%s' where uuid = '%s'" % (status, output, task_uuid)
+    cur.execute(query)
+    conn.commit()
 
 
 @api.route("/servables/<servable_namespace>/<servable_name>/run", methods=['POST'])
@@ -132,29 +166,6 @@ def api_run(servable_uuid):
     output = _perform_invocation(servable_uuid, request, type='run')
     return output
 
-
-# @api.route("/servables/<servable_uuid>/test", methods=['POST'])
-# def api_test(servable_uuid):
-#     """
-#     Invoke a servable with test data.
-#
-#     :param servable_uuid:
-#     :return:
-#     """
-#     output = _perform_invocation(servable_uuid, request, type='test')
-#     return output
-#
-#
-# @api.route("/servables/<servable_uuid>/test_cache", methods=['POST'])
-# def api_test_cache(servable_uuid):
-#     """
-#     Invoke a servable with test data and use the cache.
-#
-#     :param servable_uuid:
-#     :return:
-#     """
-#     output = _perform_invocation(servable_uuid, request, type='test_cache')
-#     return output
 
 
 ########################
@@ -272,6 +283,7 @@ def status(task_uuid):
     try:
         exec_arn = None
         status = None
+        result = ''
 
         # Find the status ID from the database
         cur.execute("SELECT * from tasks where uuid = '%s'" % task_uuid)
@@ -281,6 +293,7 @@ def status(task_uuid):
         for r in rows:
             exec_arn = r['arn']
             status = r['status']
+            result = r['result']
         res = {'status': status}
 
         # If the task is using AWS step functions, check the status there
@@ -299,6 +312,9 @@ def status(task_uuid):
             query = "UPDATE tasks set status = '%s' where uuid = '%s'" % (status, task_uuid)
             cur.execute(query)
             conn.commit()
+        # Otherwise, this is an async request
+        else:
+            res = {'status': status, 'result': result}
         return json.dumps(res, default=str)
     except Exception as e:
         print(e)
@@ -388,3 +404,34 @@ def get_namespaces():
         abort(400, description="Error: You must be logged in to perform this function.")
     res = {'namespace': short_name}
     return json.dumps(res)
+
+
+@api.route("/servables/<servable_namespace>/<servable_name>", methods=['DELETE'])
+def api_delete_servable(servable_namespace, servable_name):
+    """
+    Delete a servable
+
+    :param servable_uuid:
+    :return:
+    """
+    user_id, user_name, short_name = _get_user(cur, conn, request.headers)
+    if not user_name:
+        abort(400, description="Error: You must be logged in to perform this function.")
+
+    servable_uuid = _resolve_namespace_model(cur, conn, servable_namespace, servable_name)
+
+    query = "select * from servables here uuid = '{0}' and author = '{1}'".format(servable_uuid, user_id)
+    cur.execute(query)
+    rows = cur.fetchall()
+    if len(rows) == 0:
+        return json.dumps({'status':'Failed to delete: permission denied or no servable found.'})
+
+    query = "update servables set status = 'DELETED' where uuid = '{0}'".format(servable_uuid)
+    try:
+        cur.execute(query)
+        conn.commit()
+    except Exception as e:
+        print(e)
+        return json.dumps({"InternalError": e})
+
+    return json.dumps({'status': 'done'})
