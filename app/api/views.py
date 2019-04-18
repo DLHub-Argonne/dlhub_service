@@ -67,7 +67,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
         async_val = True
         if async_val:
             task_uuid = str(uuid.uuid4())
-            req_thread = threading.Thread(target=_async_invocation, args=(obj, task_uuid))
+            req_thread = threading.Thread(target=_async_invocation, args=(obj, task_uuid, servable_uuid, user_id, data, exec_flag))
             req_thread.start()
             response = {"task_id": task_uuid}
             return json.dumps(response)
@@ -78,7 +78,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
             response = pickle.loads(res)
             request_end = time.time()
 
-            _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, type)
+            _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
 
     except Exception as e:
         print("Failed to perform invocation %s" % e)
@@ -96,7 +96,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
         return json.dumps({"InternalError": "Failed to return output: %s" % e})
 
 
-def _async_invocation(obj, task_uuid):
+def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
     """
     Perform an asynchronous invocation to a servable then update the database once the task completes.
     """
@@ -104,12 +104,11 @@ def _async_invocation(obj, task_uuid):
     _create_task(cur, conn, '', '', task_uuid, 'invocation', '')
 
     request_start = time.time()
-
     res = zmq_server.request(pickle.dumps(obj))
     response = pickle.loads(res)
     request_end = time.time()
 
-    _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, type)
+    _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
 
     status = 'COMPLETED'
 
