@@ -191,7 +191,7 @@ def publish_servables():
             storage_path = os.path.join("/mnt/tmp", secure_filename(posted_file.filename))
             posted_file.save(storage_path)
             input_data = posted_data
-            input_data['app']['transfer_method']['path'] = storage_path
+            input_data['dlhub']['transfer_method']['path'] = storage_path
         except Exception as e:
             print('Error: {}'.format(e))
             abort(400, description="No JSON posted. Assumed file, but something went wrong: {}".format(e))
@@ -201,14 +201,14 @@ def publish_servables():
         abort(400, description="Failed to load app.json input data")
 
     # Insert owner name and time-stamp into metadata
-    input_data['app']['owner'] = short_name
-    input_data['app']['publication_date'] = int(round(time.time() * 1000))
-    input_data['app']['user_id'] = user_id
+    input_data['dlhub']['owner'] = short_name
+    input_data['dlhub']['publication_date'] = int(round(time.time() * 1000))
+    input_data['dlhub']['user_id'] = user_id
 
     # Generate model shortname and store in metadata
-    model_name = input_data['app']['name']
+    model_name = input_data['dlhub']['name']
     shorthand_name = "{name}/{model}".format(name=short_name, model=model_name.replace(" ", "_"))
-    input_data['app']['shorthand_name'] = shorthand_name
+    input_data['dlhub']['shorthand_name'] = shorthand_name
 
     # Start publication flow
     flow_arn = PUBLISH_FLOW_ARN
@@ -239,12 +239,12 @@ def publish_repo_servables():
     input_data = request.json
 
     # TODO: Duplicated code with above function. Make utility
-    input_data['app']['owner'] = short_name
-    input_data['app']['publication_date'] = int(round(time.time() * 1000))
+    input_data['dlhub']['owner'] = short_name
+    input_data['dlhub']['publication_date'] = int(round(time.time() * 1000))
     input_data['user_id'] = user_id
 
     # Make name from repository ID
-    model_name = _get_dlhub_file_from_github(input_data['repository'])['app']['name']
+    model_name = _get_dlhub_file_from_github(input_data['repository'])['dlhub']['name']
     shorthand_name = "{name}/{model}".format(name=short_name, model=model_name.replace(" ", "_"))
     input_data['shorthand_name'] = shorthand_name
 
