@@ -77,7 +77,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
             req_thread = threading.Thread(target=_async_invocation, args=(obj, task_uuid, servable_uuid, user_id, data, exec_flag))
             req_thread.start()
             response = {"task_id": task_uuid}
-            return json.dumps(response)
+            return json.dumps(response), 202
         else:
             request_start = time.time()
             # TODO (lw): Is this also dangerous
