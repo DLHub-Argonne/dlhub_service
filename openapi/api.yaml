@@ -25,22 +25,19 @@ paths:
       summary: Publish a servable to DLHub
       requestBody:
         required: true
+        description: Servable description with all required files
         content:
           multipart/form-data:
-            description: Servable description with all required files
             schema:
               type: object
               properties:
                 json:
-                  description: Servable description
                   $ref: https://raw.githubusercontent.com/DLHub-Argonne/dlhub_schemas/master/schemas/servable.json#
                 file:
                   description: ZIP file containing any content for the servable
                   type: string
-                  format: binary
-                  content: application/zip
+                  format: application/zip
           application/json:
-            description: Servable description without files
             schema:
               $ref: https://raw.githubusercontent.com/DLHub-Argonne/dlhub_schemas/master/schemas/servable.json#
 
@@ -179,4 +176,15 @@ paths:
           description: Run completed successfully
           content:
             application/json:
-              description: Results of the output, JSON-encoded
+              schema:
+                description: Results of the output, JSON-encoded
+        '202':
+          description: Asynchronous execution has started
+          content:
+            application/json:
+              schema:
+                properties:
+                  task_id:
+                    type: string
+                    format: uuid
+                    description: Task ID of the submission request
