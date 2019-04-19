@@ -11,9 +11,8 @@ from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_m
                     _check_user_access, _log_invocation, _get_dlhub_file_from_github,
                     _create_task)
 from flask import Blueprint, request, abort
-from werkzeug import secure_filename
+from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
-
 
 
 from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
@@ -28,37 +27,44 @@ zmq_server = ZMQServer()
 
 
 def _perform_invocation(servable_uuid, request, type='test'):
-    """
-    Perform the invocation.
+    """Invoke a servable
 
-    :param servable_uuid:
-    :param request:
-    :param type:
-    :return:
+    Args:
+        servable_uuid (string): UUID of servable to be executed
+        request (Request): Request from the user
+        type (str): Whether to execute the run operation of the servable
+    Returns:
+        (str): JSON-formatted results of executing the servable
     """
 
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     site = _check_user_access(cur, conn, servable_uuid, user_name)
 
+    # Return errors if the user does not have access to the servable
     if not user_name:
         abort(400, description="Error: You must be logged in to perform this function.")
-    if not request.json:
-        abort(400, description="Error: Requires JSON input.")
     if not site:
         abort(400, description="Permission denied. Cannot access servable {0}".format(servable_uuid))
+
+    # Return errors if the user did not provide formatted data
+    if not request.json:
+        abort(400, description="Error: Requires JSON input.")
+
+    # Get the input data for the function
     input_data = request.json
 
     exec_flag = 1
 
-    response = None
-
+    # Perform the invocation
     try:
         data = []
         if 'data' in input_data:
             data = input_data['data']
         elif 'python' in input_data:
+            # TODO (lw): Is decoding in the web service dangerous? Should we push this to the shim?
             data = jsonpickle.decode(input_data['python'])
 
+        # Send request to service
         obj = (exec_flag, site, data)
 
         # Manage asynchronous request
@@ -74,7 +80,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
             return json.dumps(response)
         else:
             request_start = time.time()
-
+            # TODO (lw): Is this also dangerous
             res = zmq_server.request(pickle.dumps(obj))
             response = pickle.loads(res)
             request_end = time.time()
@@ -86,13 +92,18 @@ def _perform_invocation(servable_uuid, request, type='test'):
         return json.dumps({"InternalError": "Failed to perform invocation: %s" % e})
 
     if not response:
+        # TODO (lw): This should put some kind of logging information
         abort(500, description="Error: Internal service error.")
 
     try:
+        # Attempt to make the output JSONify-able
         response_list = _decode_result(response['response'])
+
+        # Send to user as a string
         return json.dumps(response_list)
     except Exception as e:
         print("Failed to return output %s" % e)
+        # TODO (lw): Should these come back as a non-200 status?
         return json.dumps({"InternalError": "Failed to return output: %s" % e})
 
 
@@ -129,8 +140,11 @@ def api_run_namespace(servable_namespace, servable_name):
     """
     Invoke a servable.
 
-    :param servable_uuid:
-    :return:
+    Args:
+        servable_namespace (str): Owner of the servable
+        servable_name (str): Name of the servable
+    Returns:
+        (str): Response from the servable
     """
     servable_uuid = _resolve_namespace_model(cur, conn, servable_namespace, servable_name)
     output = _perform_invocation(servable_uuid, request, type='run')
@@ -151,20 +165,24 @@ def api_run(servable_uuid):
     return output
 
 
-
 ########################
 # SERVABLE PUBLICATION #
 ########################
+
 @api.route("/publish", methods=['post'])
 def publish_servables():
-    """
-    Publish a servable.
+    """Publish a servable via a POST request
 
-    :return:
+    Returns:
+        (str): JSON-encoded status information
     """
+
+    # Check the user credentials
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
         abort(400, description="Error: You must be logged in to perform this function.")
+
+    # Get the servable data
     input_data = None
     if not request.json:
         try:
@@ -182,49 +200,56 @@ def publish_servables():
     if not input_data:
         abort(400, description="Failed to load app.json input data")
 
-    # insert owner and timestamp
+    # Insert owner name and time-stamp into metadata
     input_data['app']['owner'] = short_name
     input_data['app']['publication_date'] = int(round(time.time() * 1000))
     input_data['app']['user_id'] = user_id
 
+    # Generate model shortname and store in metadata
     model_name = input_data['app']['name']
     shorthand_name = "{name}/{model}".format(name=short_name, model=model_name.replace(" ", "_"))
-
     input_data['app']['shorthand_name'] = shorthand_name
 
+    # Start publication flow
     flow_arn = PUBLISH_FLOW_ARN
-
     res = _start_flow(cur, conn, flow_arn, input_data)
     res['servable'] = shorthand_name
+
     return json.dumps(res)
 
 
 @api.route("/publish_repo", methods=['post'])
 def publish_repo_servables():
-    """
-    Publish a servable via repo2docker.
+    """Publish a servable via repo2docker
 
-    :return:
+    Returns:
+        (str): JSON-formatted status information
     """
+
+    # Check user credentials
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
         abort(400, description="Error: You must be logged in to perform this function.")
+
+    # Verify format of request
     if not request.json:
         abort(400, description="Error: Requires JSON input.")
 
+    # Generate the owner
     input_data = request.json
 
+    # TODO: Duplicated code with above function. Make utility
     input_data['app']['owner'] = short_name
     input_data['app']['publication_date'] = int(round(time.time() * 1000))
     input_data['user_id'] = user_id
 
+    # Make name from repository ID
     model_name = _get_dlhub_file_from_github(input_data['repository'])['app']['name']
     shorthand_name = "{name}/{model}".format(name=short_name, model=model_name.replace(" ", "_"))
-
     input_data['shorthand_name'] = shorthand_name
 
+    # Start publication flow
     flow_arn = PUBLISH_REPO_FLOW_ARN
-
     res = _start_flow(cur, conn, flow_arn, input_data)
     res['servable'] = shorthand_name
     return json.dumps(res)
@@ -233,32 +258,43 @@ def publish_repo_servables():
 ###################
 # Other endpoints #
 ###################
+
 @api.route("/<task_uuid>/status", methods=['GET'])
 def status(task_uuid):
     """
     Check the status of a task.
 
-    :param task_uuid:
-    :return:
+    Args:
+        task_uuid (str): UUID of task
+    Returns:
+        (str): JSON-encoded status information
     """
+
+    # Get user credentials
+    # TODO (lw): Are we concerned about users seeing other users's tasks?
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
         abort(400, description="Error: You must be logged in to perform this function.")
 
+    # Run the check
     try:
         exec_arn = None
         status = None
         result = ''
 
+        # Find the status ID from the database
         cur.execute("SELECT * from tasks where uuid = '%s'" % task_uuid)
         rows = cur.fetchall()
 
+        # Get the most-recent status message
         for r in rows:
             exec_arn = r['arn']
             status = r['status']
             result = r['result']
         res = {'status': status}
 
+        # If the task is using AWS step functions, check the status there
+        # TODO (lw): I'm not sure what this does
         if exec_arn:
             # Check sfn for status
             sfn_client = boto3.client('stepfunctions')
@@ -268,6 +304,8 @@ def status(task_uuid):
             if 'output' in response:
                 output = response['output']
                 res['output'] = output
+
+            # Update thes tatus in the database
             query = "UPDATE tasks set status = '%s' where uuid = '%s'" % (status, task_uuid)
             cur.execute(query)
             conn.commit()
@@ -317,6 +355,7 @@ def api_servables():
         return json.dumps({"InternalError": e})
 
 
+# TODO (LW): Should we change this to the namespace format?
 @api.route("/servables/<servable_uuid>/status", methods=['GET'])
 def api_servable_status(servable_uuid):
     """
@@ -325,14 +364,19 @@ def api_servable_status(servable_uuid):
     :param servable_uuid:
     :return:
     """
+
+    # Check user authentication information
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
         abort(400, description="Error: You must be logged in to perform this function.")
 
+    # Get the status of the servable from the database
     status = {}
     try:
         cur.execute("SELECT * from servables where uuid = '%s'" % servable_uuid)
         rows = cur.fetchall()
+
+        # Get the most recent status
         for r in rows:
             status = {'status': r['status']}
     except Exception as e:
@@ -349,7 +393,8 @@ def get_namespaces():
     """
     Return the current namespace of the user
 
-    :return:
+    Return:
+        (str): JSON-encoded user name
     """
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
@@ -363,8 +408,9 @@ def api_delete_servable(servable_namespace, servable_name):
     """
     Delete a servable
 
-    :param servable_uuid:
-    :return:
+    Args:
+        servable_namespace (str): Namespace of servable
+        servable_name (str): Name of the servable
     """
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
