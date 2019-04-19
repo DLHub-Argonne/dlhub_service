@@ -1,14 +1,15 @@
-import connexion
 import threading
 import zmq_broker
 
 from config import SECRET_KEY
 
+from flask import Flask
+
 from app.api.views import api
 from app.main.views import main
 
-app = connexion.FlaskApp(__name__, specification_dir='openapi/')
-app.add_api('api.yaml')
+app = Flask(__name__)
+
 app.register_blueprint(api, url_prefix="/api/v1")
 app.register_blueprint(main)
 
