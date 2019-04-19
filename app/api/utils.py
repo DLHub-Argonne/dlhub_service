@@ -43,7 +43,7 @@ def _get_dlhub_file_from_github(repository):
     try:
         g = Github(GIT_TOKEN)
         r = g.get_repo(repo)
-        contents = r.get_contents("app.json")
+        contents = r.get_contents("dlhub.json")
         decoded = base64.b64decode(contents.content)
 
         return json.loads(decoded)
