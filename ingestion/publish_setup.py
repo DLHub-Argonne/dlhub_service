@@ -1,36 +1,67 @@
 import os
-import zipfile
-import boto3
-import botocore
+import sys
 import json
 import uuid
-import shutil
+import time
+import boto3
+import base64
+import logging
+import zipfile
+import subprocess
+
+from github import Github
 from string import Template
 
-"""
-This activity worker is responsible for downloading a model and preparing it
-to be dockerized. It will need to process the input file to download the servable
-and build it.
-
-"""
-
 client = boto3.client('stepfunctions')
+
+BASE_WORKING_DIR = '/mnt/dlhub_ingest/'
+IMAGE_HOME = '/home/ubuntu/'
+
+logger = logging.getLogger('publish_setup')
+f_handler = logging.FileHandler('publish_setup.log')
+f_handler.setLevel(logging.DEBUG)
+f_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+f_handler.setFormatter(f_format)
+logger.addHandler(f_handler)
+
+
+def _get_dlhub_file(repository):
+    """
+    Use the github rest api to ensure the dlhub.json file exists.
+
+    :param repository:
+    :return:
+    """
+
+    token = '83a6cb9912fcd3f7e2b03997b9893fc22e1cd4bd'
+
+    repo = repository.replace("https://github.com/", "")
+    repo = repo.replace(".git", "")
+
+    try:
+        g = Github(token)
+        r = g.get_repo(repo)
+        contents = r.get_contents("dlhub.json")
+        decoded = base64.b64decode(contents.content)
+        return json.loads(decoded)
+    except:
+        return None
 
 
 def stage_files(location, working_dir):
     """
     Put the files in the working directory.
     """
-    print("Staging data")
+    logger.debug("Staging data")
     if 's3://' in location:
         download_s3_data(location, working_dir)
     elif '/mnt/tmp' in location:
         os.mkdir(working_dir)
         os.rename(location, "{0}/{1}".format(working_dir, location.replace("/mnt/tmp/", '')))
 
-    print("Extracting data")
+    logger.debug("Extracting data: ", working_dir)
     # Extract any zip files
-    cwd = os.getcwd()    
+    cwd = os.getcwd()
     os.chdir(working_dir)
     try:
         for item in os.listdir(working_dir):
@@ -41,9 +72,10 @@ def stage_files(location, working_dir):
                 zip_ref.close()
                 os.remove(file_name)
     except Exception as e:
-        print("Error extracting files. {}".format(e))
+        logger.error("Error extracting files. {}".format(e))
     finally:
         os.chdir(cwd)
+
 
 def download_s3_data(location, working_dir):
     """
@@ -54,8 +86,6 @@ def download_s3_data(location, working_dir):
 
     bucket = location.split("//")[1].split("/")[0]
     key = location.split(bucket)[1][1:]
-    print(bucket)
-    print(key)
 
     s3 = boto3.client('s3')
     try:
@@ -77,129 +107,123 @@ def download_s3_data(location, working_dir):
 
     except botocore.exceptions.ClientError as e:
         if e.response['Error']['Code'] == "404":
-            print("The object does not exist.")
+            logger.error("The object does not exist.")
             raise
         else:
-            print(e)
+            logger.error(e)
             raise
     except Exception as e:
-        print(e)
+       logger.error(e)
 
     return working_dir
 
 
-def setup_ingestion(task, client):
+def _configure_build_env(servable_uuid, working_dir, working_image):
     """
-    Download and configure the servable locally. This
-    should prepare the directory to be dockerized and published
-    to the DLHub service.
+    Create a directory to build the thing
 
-    1. Verify the input parameters
-    2. Download the servable directory
-    3. Configure the directory with necessary components
+    :param task:
+    :return: task
     """
-    print("Starting publication process")
 
-    print("Getting data location")
-    model_location = None
-    if 'S3' in task['dlhub']['transfer_method']:
-        model_location = task['dlhub']['transfer_method']['S3']
-    elif 'POST' in task['dlhub']['transfer_method']:
-        model_location = task['dlhub']['transfer_method']['path']
+    if not os.path.exists(working_dir):
+        os.makedirs(working_dir)
 
-    working_uuid = str(uuid.uuid4())
-    task['dlhub']['id'] = working_uuid
-    # servable_uuid = task['dlhub']['id']
-    servable_uuid = working_uuid
-    base_working_dir = '/mnt/dlhub_ingest/'
-    working_dir = "%s/%s" % (base_working_dir, working_uuid)
+    logger.debug("Creating dockerfile")
+    docker_file_contents = """from {0}
 
-    working_dir = working_dir.replace("//", "/")
+ADD . {1}
 
-    # Update the task
-    task['dlhub']['build_location'] = working_dir
+RUN pip install parsl==0.6.1
+RUN pip install dlhub_sdk
+RUN pip install git+git://github.com/DLHub-Argonne/home_run.git
+""".format(working_image, IMAGE_HOME)
 
-    # Download the model
-    print("Downloading model directory")
-    stage_files(model_location, working_dir)
+    with open("%s/Dockerfile" % (working_dir), 'w') as new_docker:
+        new_docker.write(docker_file_contents)
 
-    #config_path = "{}/config".format(directory)
-    config_path = "{}/dlhub.json".format(working_dir)
-    with open(config_path, 'w') as f:
-        f.write(json.dumps(task))
-
-    # Create the requirements file
-    create_requirements_file(task, working_dir)
-
-    # Create the apps file
     template_params = {'function': servable_uuid.replace("-", "_"),
                        'executor': servable_uuid}
 
-    with open('../templates/apps.py') as apps_file:
+    with open('templates/apps.py') as apps_file:
         shim_template = Template(apps_file.read())
         shim_content = shim_template.substitute(template_params)
         with open("{}/apps.py".format(working_dir), 'w') as new_shim:
             new_shim.write(shim_content)
 
-    # Create the docker file
-    create_docker_file(task, working_dir)
 
-    print("Done.")
-    return task
-
-
-def create_requirements_file(task, working_dir):
+def ingest(task, client):
     """
-    Create a requirements file to be pip installed. Iterate through
-    the dependencies and add them. Also include parsl, toolbox, home_run, etc.
+    Ingest the data
 
-    :param task:
-    :param working_dir:
+    :param data:
+    :param client:
     :return:
     """
 
-    # Get the list of requirements from the schema
-    dependencies = []
+    logger.debug("Starting ingest")
+    if 'dlhub' not in task:
+        task['dlhub'] = {}
+
+    model_location = None
+    if 'S3' in task['dlhub']['transfer_method']:
+        model_location = task['dlhub']['transfer_method']['S3']
+    elif 'POST' in task['dlhub']['transfer_method']:
+        model_location = task['dlhub']['transfer_method']['path']
+    if 'repository' in task:
+        model_location = task['respoitory']
+
+    logger.info(task)
+
+    servable_uuid = str(uuid.uuid4())
     try:
-        for k, v in task['servable']['dependencies']['python'].items():
-            dependencies.append("{0}=={1}".format(k, v))
-    except:
-        # There are no python dependencies
-        pass
+        task['dlhub']['id'] = servable_uuid
+        task['dlhub']['user_id'] = task['user_id']
+        task['dlhub']['shorthand_name'] = task['shorthand_name']
+    except Exception as e:
+        logger.error('key moved: ', e)
+        logger.debug('continuing')
 
-    # Add in parsl specific ones
-    dependencies.append("parsl==0.6.1")
-#    dependencies.append("tensorflow")
-    dependencies.append("git+git://github.com/DLHub-Argonne/dlhub_sdk.git")
-    dependencies.append("git+git://github.com/DLHub-Argonne/home_run.git")
+    working_name = "{0}-{1}".format(servable_uuid, str(time.time()).split(".")[0])
+    working_dir = ("%s/%s" % (BASE_WORKING_DIR, working_name)).replace("//", "/")
+    working_image = "{0}-img".format(working_name)
 
-    with open("{}/requirements.txt".format(working_dir), "a") as fp:
-        for dep in dependencies:
-            fp.write(dep + "\n")
+    try:
+        stage_files(model_location, working_dir)
+    except Exception as e:
+        logger.error("Error staging data: ", e)
 
 
-def create_docker_file(task, working_dir):
-    """
-    Create a docker file. For now just use a template.
+    tmp_image = "{0}-tmp".format(working_image)
 
-    :param task:
-    :param working_dir:
-    :return: JSON metadata
-    """
-    # Put in a Dockerfile
-    print("Creating dockerfile")
-    docker_file = "../templates/Dockerfile"
-    with open(docker_file) as docker:
-        # Probably use a template
-        docker_content = docker.read()
-        with open("%s/Dockerfile" % (working_dir), 'w') as new_docker:
-            new_docker.write(docker_content)
+    logger.debug('running repo2docker')
+    # Use repo2docker to build the container
+    cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(tmp_image,
+                                                                     working_dir)
+    logger.debug("Repo2docker: {}".format(cmd))
+    subprocess.call(cmd.split(" "))
+    
+    logger.debug("Configuring working dir: {}".format(working_dir))
+    _configure_build_env(servable_uuid, working_dir, tmp_image)
+    
+    logger.debug('Running repo2docker the second time')
+    cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(working_image,
+                                                                     working_dir)
+
+    subprocess.call(cmd.split(" "))
+
+    task['dlhub']['build_location'] = working_dir
+
+    return task
 
 
 def monitor():
     """
     Pull jobs from the step function as the preprocess activity
     """
+    # ingest({'repository': 'https://github.com/ryanchard/test_repo2docker.git'}, '')
+    # return
+
     while True:
         try:
             response = client.get_activity_task(
@@ -207,24 +231,23 @@ def monitor():
                 workerName='setup-activity'
             )
 
-            print(response)
             if response['taskToken']:
                 data = response['input']
                 try:
                     data = json.loads(data)
-                    print(data)
-                    out = setup_ingestion(data, client)
-                    print("Reporting success")
-                    print(out)
+                    logger.debug(data)
+                    out = ingest(data, client)
+                    logger.info("Reporting success")
+                    logger.info(out)
                     client.send_task_success(taskToken=response['taskToken'], output=json.dumps(out))
                 except Exception as e:
-                    print("Reporting failure")
-                    print(e)
+                    logger.error("Reporting failure")
+                    logger.error(e)
                     client.send_task_failure(taskToken=response['taskToken'], error='FAILED', cause=str(e))
             else:
-                print(".")
+                logger.info(".")
         except Exception as e:
-            print(e)
+            logger.error(e)
 
 
 if __name__ == "__main__" :
