@@ -5,6 +5,7 @@ import uuid
 import time
 import boto3
 import base64
+import zipfile
 import subprocess
 
 from github import Github
@@ -52,7 +53,7 @@ def stage_files(location, working_dir):
         os.mkdir(working_dir)
         os.rename(location, "{0}/{1}".format(working_dir, location.replace("/mnt/tmp/", '')))
 
-    print("Extracting data")
+    print("Extracting data: ", working_dir)
     # Extract any zip files
     cwd = os.getcwd()
     os.chdir(working_dir)
@@ -140,7 +141,7 @@ RUN pip install git+git://github.com/DLHub-Argonne/home_run.git
     template_params = {'function': servable_uuid.replace("-", "_"),
                        'executor': servable_uuid}
 
-    with open('../templates/apps.py') as apps_file:
+    with open('templates/apps.py') as apps_file:
         shim_template = Template(apps_file.read())
         shim_content = shim_template.substitute(template_params)
         with open("{}/apps.py".format(working_dir), 'w') as new_shim:
@@ -171,24 +172,40 @@ def ingest(task, client):
     print(task)
 
     servable_uuid = str(uuid.uuid4())
-
-    task['dlhub']['id'] = servable_uuid
-    task['dlhub']['user_id'] = task['user_id']
-    task['dlhub']['shorthand_name'] = task['shorthand_name']
+    try:
+        task['dlhub']['id'] = servable_uuid
+        task['dlhub']['user_id'] = task['user_id']
+        task['dlhub']['shorthand_name'] = task['shorthand_name']
+    except Exception as e:
+        print('key moved: ', e)
+        print('continuing')
 
     working_name = "{0}-{1}".format(servable_uuid, str(time.time()).split(".")[0])
     working_dir = ("%s/%s" % (BASE_WORKING_DIR, working_name)).replace("//", "/")
     working_image = "{0}-img".format(working_name)
 
-    print("Configuring working dir: {}".format(working_dir))
+    try:
+        stage_files(model_location, working_dir)
+    except Exception as e:
+        print("Error staging data: ", e)
 
-    _configure_build_env(servable_uuid, working_dir, working_image)
+
+    tmp_image = "{0}-tmp".format(working_image)
 
     print('running repo2docker')
     # Use repo2docker to build the container
-    cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(working_image,
-                                                                     model_location)
+    cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(tmp_image,
+                                                                     working_dir)
     print("Repo2docker: {}".format(cmd))
+    subprocess.call(cmd.split(" "))
+    
+    print("Configuring working dir: {}".format(working_dir))
+    _configure_build_env(servable_uuid, working_dir, tmp_image)
+    
+    print('Running repo2docker the second time')
+    cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(working_image,
+                                                                     working_dir)
+
     subprocess.call(cmd.split(" "))
 
     task['dlhub']['build_location'] = working_dir
@@ -222,6 +239,7 @@ def monitor():
                     client.send_task_success(taskToken=response['taskToken'], output=json.dumps(out))
                 except Exception as e:
                     print ("Reporting failure")
+                    print (e)
                     client.send_task_failure(taskToken=response['taskToken'], error='FAILED', cause=str(e))
             else:
                 print (".")
