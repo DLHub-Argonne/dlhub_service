@@ -3,18 +3,24 @@ import json
 import subprocess
 import os
 import mdf_toolbox
-
+import logging
 import psycopg2
 import psycopg2.extras
 
 client = boto3.client('stepfunctions')
+
+logger = logging.getLogger('publish_dockerize')
+f_handler = logging.FileHandler('publish_dockerize.log')
+f_handler.setLevel(logging.DEBUG)
+f_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+f_handler.setFormatter(f_format)
+logger.addHandler(f_handler)
 
 
 def dockerize(task, client):
     """
     Use the singularity container to preprocess the data 
     """
-    print(task)
 
     location = task['dlhub']['build_location']
     uuid = task['dlhub']['id']
@@ -22,17 +28,17 @@ def dockerize(task, client):
     os.chdir(location)
     # Start the process
     # 1. build the container
-    print("Building container")
+    logger.debug("Building container")
     cmd = ['docker', 'build', '-t', uuid, '.']
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = process.communicate()
     if err is not None:
         # return an error so it will retry this
-        print(err)
+        logger.error(err)
         raise Exception("Failed to build docker")
-    print(out)
+    logger.debug(out)
 
-    print("Checking if repository exists")
+    logger.debug("Checking if repository exists")
     ecr_arn = None
     ecr_uri = None
     ecr_client = boto3.client('ecr')
@@ -44,17 +50,20 @@ def dockerize(task, client):
         ecr_arn = response['repositories'][0]['repositoryArn']
         ecr_uri = response['repositories'][0]['repositoryUri']
     except:
-        print ("Creating ECS registry")
+        logger.debug("Creating ECS registry")
         response = ecr_client.create_repository(repositoryName=uuid)
         ecr_arn = response['repository']['repositoryArn']
         ecr_uri = response['repository']['repositoryUri']
-    print ("Got ECR repo: %s" % ecr_uri)
+    logger.info("Got ECR repo: %s" % ecr_uri)
 
     # # 3. Add a tag to the docker container
-    print ("Tagging container")
+    logger.debug("Tagging container")
     cmd = ['docker', 'tag', "%s:latest" % uuid, '%s:latest' % ecr_uri]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = process.communicate()
+    if len(err) > 0:
+        logger.error(err)
+        return None
 
     # 4. Login to ECR via docker
     cmd = ['aws', 'ecr', 'get-login', '--no-include-email']
@@ -63,9 +72,11 @@ def dockerize(task, client):
     login_str = out.decode('utf-8').strip().split(" ")
     process = subprocess.Popen(login_str, stdout=subprocess.PIPE)
     out, err = process.communicate()
-
+    if len(err) > 0:
+        logger.error(err)
+        return None
     # 5. Push the container to ECR
-    print ("Pushing to ECR")
+    logger.debug("Pushing to ECR")
     cmd = ['docker', 'push', ecr_uri]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = process.communicate()
@@ -98,7 +109,7 @@ def search_ingest(task):
     Args:
         task (dict): the task description.
     """
-    print ("Ingesting servable into Search.")
+    logger.debug("Ingesting servable into Search.")
 
     idx = "dlhub"
     iden = "https://dlhub.org/servables/{}".format(task['dlhub']['id'])
@@ -116,14 +127,7 @@ def search_ingest(task):
 
     ingest_client = mdf_toolbox.login(services=["search_ingest"])["search_ingest"]
     ingest_client.ingest(idx, gingest)
-    print("Ingestion of {} to DLHub servables complete".format(iden))
-
-    #ingestable = mdf_toolbox.format_gmeta(ingestable, acl="public", identifier=iden)
-    #ingestable = mdf_toolbox.format_gmeta([ingestable]) # Make it a GIngest list of GMetaEntry
-
-    #ingest_client = mdf_toolbox.login(services=["search_ingest"])["search_ingest"]
-    #ingest_client.ingest(index, ingestable)
-    #print("Ingestion of {} to DLHub servables complete".format(name))
+    logger.info("Ingestion of {} to DLHub servables complete".format(iden))
 
 
 def monitor():
@@ -137,7 +141,6 @@ def monitor():
                 workerName='dockerize-activity'
             )
 
-            print (response)
             if response['taskToken']:
                 data = response['input']
                 try:
@@ -146,19 +149,18 @@ def monitor():
                     try:
                         ingest_output = search_ingest(out)
                     except Exception as e:
-                        print("Failed to ingest to search. {}".format(e))
-                    print ("Reporting success")
-                    print (out)
+                        logger.debug("Failed to ingest to search. {}".format(e))
+                    logger.debug("Reporting success")
+                    logger.debug(out)
                     client.send_task_success(taskToken=response['taskToken'], output=json.dumps(out))
                 except Exception as e:
-                    print ("Reporting failure")
+                    logger.error("Reporting failure")
                     client.send_task_failure(taskToken=response['taskToken'], error='FAILED', cause=str(e))
             else:
-                print (".")
+                logger.debug(".")
         except Exception as e:
-            print (e)
+            logger.error(e)
 
 
 if __name__ == "__main__" :
-    # test()
     monitor()
