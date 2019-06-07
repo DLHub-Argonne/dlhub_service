@@ -7,6 +7,7 @@ from flask import Flask
 
 from app.api.views import api
 from app.main.views import main
+import logging
 
 app = Flask(__name__)
 
@@ -35,5 +36,8 @@ if __name__ == "__main__":
     broker_thread.start()
     app.run()
 else:
+    gunicorn_logger = logging.getLogger('gunicorn.error')
+    app.logger.handlers = gunicorn_logger.handlers
+    app.logger.setLevel(gunicorn_logger.level)
     broker_thread = threading.Thread(name='broker_thread', target=start_broker, daemon=True)
     broker_thread.start()

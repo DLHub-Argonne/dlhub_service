@@ -38,8 +38,19 @@ def _perform_invocation(servable_uuid, request, type='test'):
     """
 
     user_id, user_name, short_name = _get_user(cur, conn, request.headers)
-    site = _check_user_access(cur, conn, servable_uuid, user_name)
+    site = None
+    exec_flag = 1
+    if isinstance(servable_uuid, list):
+        exec_flag = 2
+        site = []
+        for s in servable_uuid:
+            site.append(check_user_access(cur, conn, s, user_name))
+    else:
+        site = _check_user_access(cur, conn, servable_uuid, user_name)
+        #exec_flag = 2
+        #site = [site, site, site]
 
+    print(site)
     # Return errors if the user does not have access to the servable
     if not user_name:
         abort(400, description="Error: You must be logged in to perform this function.")
@@ -52,8 +63,6 @@ def _perform_invocation(servable_uuid, request, type='test'):
 
     # Get the input data for the function
     input_data = request.json
-
-    exec_flag = 1
 
     # Perform the invocation
     try:
@@ -163,6 +172,29 @@ def api_run(servable_uuid):
     """
     output = _perform_invocation(servable_uuid, request, type='run')
     return output
+
+
+@api.route("/pipelines/run", methods=['POST'])
+def api_run_pipeline():
+    """
+    Invoke a servable.
+
+    Returns:
+        (str): Response from the servables
+    """
+    servables = []
+    if 'servables' in request.json():
+        servables = request.json()['servables']
+
+    resolved_servables = []
+    for x in servables:
+        servable_namespace = x.split('/')[0]
+        servable_name = x.split('/')[1]
+        resolved_servables.append(_resolve_namespace_model(cur, conn, servable_namespace, servable_name))
+        
+    output = _perform_invocation(resolved_servables, request, type='run')
+    return output
+
 
 
 ########################
