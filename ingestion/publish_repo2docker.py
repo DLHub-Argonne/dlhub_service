@@ -16,12 +16,7 @@ client = boto3.client('stepfunctions')
 BASE_WORKING_DIR = '/mnt/dlhub_ingest/'
 IMAGE_HOME = '/home/ubuntu/'
 
-logger = logging.getLogger('publish_repo2docker')
-f_handler = logging.FileHandler('publish_repo2docker.log')
-f_handler.setLevel(logging.DEBUG)
-f_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-f_handler.setFormatter(f_format)
-logger.addHandler(f_handler)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.DEBUG, filename='publish_repo2docker.log')
 
 
 def _get_dlhub_file(repository):
@@ -58,7 +53,7 @@ def _configure_build_env(servable_uuid, working_dir, working_image):
     if not os.path.exists(working_dir):
         os.makedirs(working_dir)
 
-    logger.debug("Creating dockerfile")
+    logging.debug("Creating dockerfile")
     docker_file_contents = """from {0}
 
 ADD . {1}
@@ -90,7 +85,7 @@ def ingest(task, client):
     :return:
     """
 
-    logger.debug("Starting ingest")
+    logging.debug("Starting ingest")
     if 'dlhub' not in task:
         task['dlhub'] = {}
 
@@ -98,13 +93,13 @@ def ingest(task, client):
 
     #dlhub_contents = _get_dlhub_file(repo)
     dlhub_contents = task
-    logger.debug(dlhub_contents)
+    logging.debug(dlhub_contents)
     if not dlhub_contents:
         return {"Error": "Could not read dlhub.json file in repository."}
     else:
         task.update(dlhub_contents)
     
-    logger.info(task)
+    logging.info(task)
 
     servable_uuid = str(uuid.uuid4())
 
@@ -116,15 +111,15 @@ def ingest(task, client):
     working_dir = ("%s/%s" % (BASE_WORKING_DIR, working_name)).replace("//", "/")
     working_image = "{0}-img".format(working_name)
 
-    logger.info("Configuring working dir: {}".format(working_dir))
+    logging.info("Configuring working dir: {}".format(working_dir))
 
     _configure_build_env(servable_uuid, working_dir, working_image)
 
-    logger.debug('running repo2docker')
+    logging.debug('running repo2docker')
     # Use repo2docker to build the container
     cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(working_image,
                                                                      repo)
-    logger.info("Repo2docker: {}".format(cmd))
+    logging.info("Repo2docker: {}".format(cmd))
     subprocess.call(cmd.split(" "))
 
     task['dlhub']['build_location'] = working_dir
@@ -150,18 +145,18 @@ def monitor():
                 data = response['input']
                 try:
                     data = json.loads(data)
-                    logger.debug(data)
+                    logging.debug(data)
                     out = ingest(data, client)
-                    logger.debug("Reporting success")
-                    logger.debug(out)
+                    logging.debug("Reporting success")
+                    logging.debug(out)
                     client.send_task_success(taskToken=response['taskToken'], output=json.dumps(out))
                 except Exception as e:
-                    logger.debug("Reporting failure")
+                    logging.debug("Reporting failure")
                     client.send_task_failure(taskToken=response['taskToken'], error='FAILED', cause=str(e))
             else:
-                logger.debug(".")
+                logging.debug(".")
         except Exception as e:
-            logger.debug(e)
+            logging.debug(e)
 
 
 if __name__ == "__main__" :

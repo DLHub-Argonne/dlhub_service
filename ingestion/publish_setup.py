@@ -17,13 +17,7 @@ client = boto3.client('stepfunctions')
 BASE_WORKING_DIR = '/mnt/dlhub_ingest/'
 IMAGE_HOME = '/home/ubuntu/'
 
-logger = logging.getLogger('publish_setup')
-f_handler = logging.FileHandler('publish_setup.log')
-f_handler.setLevel(logging.DEBUG)
-f_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-f_handler.setFormatter(f_format)
-logger.addHandler(f_handler)
-
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.DEBUG, filename='publish_setup.log')
 
 def _get_dlhub_file(repository):
     """
@@ -52,14 +46,14 @@ def stage_files(location, working_dir):
     """
     Put the files in the working directory.
     """
-    logger.debug("Staging data")
+    logging.debug("Staging data")
     if 's3://' in location:
         download_s3_data(location, working_dir)
     elif '/mnt/tmp' in location:
         os.mkdir(working_dir)
         os.rename(location, "{0}/{1}".format(working_dir, location.replace("/mnt/tmp/", '')))
 
-    logger.debug("Extracting data: ", working_dir)
+    logging.debug("Extracting data: ", working_dir)
     # Extract any zip files
     cwd = os.getcwd()
     os.chdir(working_dir)
@@ -72,7 +66,7 @@ def stage_files(location, working_dir):
                 zip_ref.close()
                 os.remove(file_name)
     except Exception as e:
-        logger.error("Error extracting files. {}".format(e))
+        logging.error("Error extracting files. {}".format(e))
     finally:
         os.chdir(cwd)
 
@@ -107,13 +101,13 @@ def download_s3_data(location, working_dir):
 
     except botocore.exceptions.ClientError as e:
         if e.response['Error']['Code'] == "404":
-            logger.error("The object does not exist.")
+            logging.error("The object does not exist.")
             raise
         else:
-            logger.error(e)
+            logging.error(e)
             raise
     except Exception as e:
-       logger.error(e)
+       logging.error(e)
 
     return working_dir
 
@@ -129,7 +123,7 @@ def _configure_build_env(servable_uuid, working_dir, working_image):
     if not os.path.exists(working_dir):
         os.makedirs(working_dir)
 
-    logger.debug("Creating dockerfile")
+    logging.debug("Creating dockerfile")
     docker_file_contents = """from {0}
 
 ADD . {1}
@@ -161,7 +155,7 @@ def ingest(task, client):
     :return:
     """
 
-    logger.debug("Starting ingest")
+    logging.debug("Starting ingest")
     if 'dlhub' not in task:
         task['dlhub'] = {}
 
@@ -173,7 +167,7 @@ def ingest(task, client):
     if 'repository' in task:
         model_location = task['respoitory']
 
-    logger.info(task)
+    logging.info(task)
 
     servable_uuid = str(uuid.uuid4())
     try:
@@ -181,8 +175,8 @@ def ingest(task, client):
         task['dlhub']['user_id'] = task['user_id']
         task['dlhub']['shorthand_name'] = task['shorthand_name']
     except Exception as e:
-        logger.error('key moved: ', e)
-        logger.debug('continuing')
+        logging.error('key moved: ', e)
+        logging.debug('continuing')
 
     working_name = "{0}-{1}".format(servable_uuid, str(time.time()).split(".")[0])
     working_dir = ("%s/%s" % (BASE_WORKING_DIR, working_name)).replace("//", "/")
@@ -191,22 +185,22 @@ def ingest(task, client):
     try:
         stage_files(model_location, working_dir)
     except Exception as e:
-        logger.error("Error staging data: ", e)
+        logging.error("Error staging data: ", e)
 
 
     tmp_image = "{0}-tmp".format(working_image)
 
-    logger.debug('running repo2docker')
+    logging.debug('running repo2docker')
     # Use repo2docker to build the container
     cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(tmp_image,
                                                                      working_dir)
-    logger.debug("Repo2docker: {}".format(cmd))
+    logging.debug("Repo2docker: {}".format(cmd))
     subprocess.call(cmd.split(" "))
     
-    logger.debug("Configuring working dir: {}".format(working_dir))
+    logging.debug("Configuring working dir: {}".format(working_dir))
     _configure_build_env(servable_uuid, working_dir, tmp_image)
     
-    logger.debug('Running repo2docker the second time')
+    logging.debug('Running repo2docker the second time')
     cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(working_image,
                                                                      working_dir)
 
@@ -235,19 +229,19 @@ def monitor():
                 data = response['input']
                 try:
                     data = json.loads(data)
-                    logger.debug(data)
+                    logging.debug(data)
                     out = ingest(data, client)
-                    logger.info("Reporting success")
-                    logger.info(out)
+                    logging.info("Reporting success")
+                    logging.info(out)
                     client.send_task_success(taskToken=response['taskToken'], output=json.dumps(out))
                 except Exception as e:
-                    logger.error("Reporting failure")
-                    logger.error(e)
+                    logging.error("Reporting failure")
+                    logging.error(e)
                     client.send_task_failure(taskToken=response['taskToken'], error='FAILED', cause=str(e))
             else:
-                logger.info(".")
+                logging.info(".")
         except Exception as e:
-            logger.error(e)
+            logging.error(e)
 
 
 if __name__ == "__main__" :

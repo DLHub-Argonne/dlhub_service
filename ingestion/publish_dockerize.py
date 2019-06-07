@@ -9,12 +9,7 @@ import psycopg2.extras
 
 client = boto3.client('stepfunctions')
 
-logger = logging.getLogger('publish_dockerize')
-f_handler = logging.FileHandler('publish_dockerize.log')
-f_handler.setLevel(logging.DEBUG)
-f_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-f_handler.setFormatter(f_format)
-logger.addHandler(f_handler)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.DEBUG, filename='publish_dockerize.log')
 
 
 def dockerize(task, client):
@@ -28,17 +23,17 @@ def dockerize(task, client):
     os.chdir(location)
     # Start the process
     # 1. build the container
-    logger.debug("Building container")
+    logging.debug("Building container")
     cmd = ['docker', 'build', '-t', uuid, '.']
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = process.communicate()
     if err is not None:
         # return an error so it will retry this
-        logger.error(err)
+        logging.error(err)
         raise Exception("Failed to build docker")
-    logger.debug(out)
+    logging.debug(out)
 
-    logger.debug("Checking if repository exists")
+    logging.debug("Checking if repository exists")
     ecr_arn = None
     ecr_uri = None
     ecr_client = boto3.client('ecr')
@@ -50,19 +45,19 @@ def dockerize(task, client):
         ecr_arn = response['repositories'][0]['repositoryArn']
         ecr_uri = response['repositories'][0]['repositoryUri']
     except:
-        logger.debug("Creating ECS registry")
+        logging.debug("Creating ECS registry")
         response = ecr_client.create_repository(repositoryName=uuid)
         ecr_arn = response['repository']['repositoryArn']
         ecr_uri = response['repository']['repositoryUri']
-    logger.info("Got ECR repo: %s" % ecr_uri)
+    logging.info("Got ECR repo: %s" % ecr_uri)
 
     # # 3. Add a tag to the docker container
-    logger.debug("Tagging container")
+    logging.debug("Tagging container")
     cmd = ['docker', 'tag', "%s:latest" % uuid, '%s:latest' % ecr_uri]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = process.communicate()
     if len(err) > 0:
-        logger.error(err)
+        logging.error(err)
         return None
 
     # 4. Login to ECR via docker
@@ -73,10 +68,10 @@ def dockerize(task, client):
     process = subprocess.Popen(login_str, stdout=subprocess.PIPE)
     out, err = process.communicate()
     if len(err) > 0:
-        logger.error(err)
+        logging.error(err)
         return None
     # 5. Push the container to ECR
-    logger.debug("Pushing to ECR")
+    logging.debug("Pushing to ECR")
     cmd = ['docker', 'push', ecr_uri]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = process.communicate()
@@ -109,7 +104,7 @@ def search_ingest(task):
     Args:
         task (dict): the task description.
     """
-    logger.debug("Ingesting servable into Search.")
+    logging.debug("Ingesting servable into Search.")
 
     idx = "dlhub"
     iden = "https://dlhub.org/servables/{}".format(task['dlhub']['id'])
@@ -127,7 +122,7 @@ def search_ingest(task):
 
     ingest_client = mdf_toolbox.login(services=["search_ingest"])["search_ingest"]
     ingest_client.ingest(idx, gingest)
-    logger.info("Ingestion of {} to DLHub servables complete".format(iden))
+    logging.info("Ingestion of {} to DLHub servables complete".format(iden))
 
 
 def monitor():
@@ -149,17 +144,17 @@ def monitor():
                     try:
                         ingest_output = search_ingest(out)
                     except Exception as e:
-                        logger.debug("Failed to ingest to search. {}".format(e))
-                    logger.debug("Reporting success")
-                    logger.debug(out)
+                        logging.debug("Failed to ingest to search. {}".format(e))
+                    logging.debug("Reporting success")
+                    logging.debug(out)
                     client.send_task_success(taskToken=response['taskToken'], output=json.dumps(out))
                 except Exception as e:
-                    logger.error("Reporting failure")
+                    logging.error("Reporting failure")
                     client.send_task_failure(taskToken=response['taskToken'], error='FAILED', cause=str(e))
             else:
-                logger.debug(".")
+                logging.debug(".")
         except Exception as e:
-            logger.error(e)
+            logging.error(e)
 
 
 if __name__ == "__main__" :
