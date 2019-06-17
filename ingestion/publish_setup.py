@@ -112,7 +112,7 @@ def download_s3_data(location, working_dir):
     return working_dir
 
 
-def _configure_build_env(servable_uuid, working_dir, working_image):
+def _configure_build_env(servable_uuid, working_dir, working_image, dlhub_json_file):
     """
     Create a directory to build the thing
 
@@ -144,6 +144,9 @@ RUN pip install git+git://github.com/DLHub-Argonne/home_run.git
         shim_content = shim_template.substitute(template_params)
         with open("{}/apps.py".format(working_dir), 'w') as new_shim:
             new_shim.write(shim_content)
+
+    with open("%s/dlhub.json" % (working_dir), 'w') as dlhub_file:
+        dlhub_file.write(json.dumps(dlhub_json_file))
 
 
 def ingest(task, client):
@@ -198,7 +201,7 @@ def ingest(task, client):
     subprocess.call(cmd.split(" "))
     
     logging.debug("Configuring working dir: {}".format(working_dir))
-    _configure_build_env(servable_uuid, working_dir, tmp_image)
+    _configure_build_env(servable_uuid, working_dir, tmp_image, task)
     
     logging.debug('Running repo2docker the second time')
     cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(working_image,

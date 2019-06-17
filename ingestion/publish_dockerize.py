@@ -54,25 +54,30 @@ def dockerize(task, client):
     # # 3. Add a tag to the docker container
     logging.debug("Tagging container")
     cmd = ['docker', 'tag', "%s:latest" % uuid, '%s:latest' % ecr_uri]
+    logging.debug(cmd)
+
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = process.communicate()
-    if len(err) > 0:
+    if err:
         logging.error(err)
-        return None
+        raise Exception
 
     # 4. Login to ECR via docker
     cmd = ['aws', 'ecr', 'get-login', '--no-include-email']
+    logging.debug(cmd)
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = process.communicate()
     login_str = out.decode('utf-8').strip().split(" ")
     process = subprocess.Popen(login_str, stdout=subprocess.PIPE)
     out, err = process.communicate()
-    if len(err) > 0:
+    if err:
         logging.error(err)
-        return None
+        raise Exception
+    
     # 5. Push the container to ECR
     logging.debug("Pushing to ECR")
     cmd = ['docker', 'push', ecr_uri]
+    logging.debug(cmd)
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, err = process.communicate()
 

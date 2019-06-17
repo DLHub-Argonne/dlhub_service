@@ -69,6 +69,8 @@ def _create_task(cur, conn, input_data, response, task_uuid, task_type='ingest',
         if response:
             if 'executionArn' in response:
                 arn_val = response['executionArn']
+        if not input_data:
+            input_data = []
         query = "INSERT INTO tasks (uuid, type, input, arn, status, result) values ('%s', '%s', '%s', '%s', 'RUNNING', '%s')" % (
             task_uuid, task_type, json.dumps(input_data).replace("'", "''"), arn_val, result)
         cur.execute(query)
@@ -86,7 +88,7 @@ def _log_invocation(cur, conn, response, request_start, request_end, servable_uu
     :return:
     """
     try:
-        invocation_time = None
+        invocation_time = 'NULL'
         if 'invocation_time' in response:
             invocation_time = response['invocation_time']
         request_time = (request_end - request_start) * 1000
