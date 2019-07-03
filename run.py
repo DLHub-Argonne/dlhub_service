@@ -13,7 +13,7 @@ app = Flask(__name__)
 
 app.register_blueprint(api, url_prefix="/api/v1")
 app.register_blueprint(main)
-
+app.register_blueprint(automate_api, url_prefix="automate")
 
 def start_broker():
     """
