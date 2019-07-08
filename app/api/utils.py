@@ -122,6 +122,12 @@ def _decode_result(tmp_res_lst):
         response_list.append(tmp_res_lst.tolist())
     else:
         response_list.append(tmp_res_lst)
+    for res in list(response_list):
+        if type(res) is bytes:
+            response_list.remove(res)
+            res = str(res)
+            response_list.append(res)
+            print('encoding bytes')
     return response_list
 
 

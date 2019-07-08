@@ -53,7 +53,7 @@ def stage_files(location, working_dir):
         os.mkdir(working_dir)
         os.rename(location, "{0}/{1}".format(working_dir, location.replace("/mnt/tmp/", '')))
 
-    logging.debug("Extracting data: ", working_dir)
+    logging.debug(f"Extracting data: {working_dir}")
     # Extract any zip files
     cwd = os.getcwd()
     os.chdir(working_dir)
@@ -178,8 +178,9 @@ def ingest(task, client):
         task['dlhub']['user_id'] = task['user_id']
         task['dlhub']['shorthand_name'] = task['shorthand_name']
     except Exception as e:
-        logging.error('key moved: ', e)
+        logging.error(f'key moved: {e}')
         logging.debug('continuing')
+    logging.debug(task)
 
     working_name = "{0}-{1}".format(servable_uuid, str(time.time()).split(".")[0])
     working_dir = ("%s/%s" % (BASE_WORKING_DIR, working_name)).replace("//", "/")
@@ -206,7 +207,6 @@ def ingest(task, client):
     logging.debug('Running repo2docker the second time')
     cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(working_image,
                                                                      working_dir)
-
     subprocess.call(cmd.split(" "))
 
     task['dlhub']['build_location'] = working_dir

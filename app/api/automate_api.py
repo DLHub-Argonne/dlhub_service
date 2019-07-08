@@ -7,10 +7,11 @@ import uuid
 import time
 import os
 import datetime
+
 from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_model,
                     _check_user_access, _log_invocation, _get_dlhub_file_from_github,
                     _create_task)
-from flask import Blueprint, request, abort
+from flask import Blueprint, request, abort, jsonify
 from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
 
@@ -20,7 +21,7 @@ from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
 conn, cur = _get_db_connection()
 
 # Flask
-api = Blueprint("automate_api", __name__)
+automate_api = Blueprint("automate_api", __name__)
 
 # ZMQ
 zmq_server = ZMQServer()
@@ -62,7 +63,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
         abort(400, description="Error: Requires JSON input.")
 
     # Get the input data for the function
-    input_data = request.json
+    input_data = request.json['body']['input_data']
 
     # Perform the invocation
     try:
@@ -77,24 +78,17 @@ def _perform_invocation(servable_uuid, request, type='test'):
         obj = (exec_flag, site, data)
 
         # Manage asynchronous request
-        async_val = False
-        if 'asynchronous' in input_data:
-            async_val = input_data['asynchronous']
-
-        if async_val:
+        
+        try:
             task_uuid = str(uuid.uuid4())
+            print(task_uuid)
             req_thread = threading.Thread(target=_async_invocation, args=(obj, task_uuid, servable_uuid, user_id, data, exec_flag))
             req_thread.start()
             response = {"task_id": task_uuid}
-            return json.dumps(response), 202
-        else:
-            request_start = time.time()
-            # TODO (lw): Is this also dangerous
-            res = zmq_server.request(pickle.dumps(obj))
-            response = pickle.loads(res)
-            request_end = time.time()
-
-            _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
+            print(response)
+            return response
+        except:
+            pass
 
     except Exception as e:
         print("Failed to perform invocation %s" % e)
@@ -144,10 +138,10 @@ def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
     conn.commit()
 
 
-@api.route("/run", methods=['POST'])
-def api_run_namespace(servable_namespace, servable_name):
-    payload=request.json()
-    payload=payload['data']
+@automate_api.route("/run", methods=['POST'])
+def api_run_namespace():
+    payload=request.json['body']
+    #payload=payload['data']
     """
     Invoke a servable.
 
@@ -164,14 +158,14 @@ def api_run_namespace(servable_namespace, servable_name):
     "action_id":str(uuid),
     "label":"running model",
     "status":"ACTIVE",
-    "details":{}
+    "details":{},
     "start_time":datetime.datetime.utcnow(),
     "release_after":"P30D"
     }
     return jsonify(job)
 
 
-@api.route("/servables/<servable_uuid>/run", methods=['POST'])
+@automate_api.route("/servables/<servable_uuid>/run", methods=['POST'])
 def api_run(servable_uuid):
     """
     ** DEPRECATED NOW WE USE NAMESPACES **
@@ -185,7 +179,7 @@ def api_run(servable_uuid):
     return output
 
 
-@api.route("/pipelines/run", methods=['POST'])
+@automate_api.route("/pipelines/run", methods=['POST'])
 def api_run_pipeline():
     """
     Invoke a servable.
@@ -212,7 +206,7 @@ def api_run_pipeline():
 # SERVABLE PUBLICATION #
 ########################
 
-@api.route("/publish", methods=['post'])
+@automate_api.route("/publish", methods=['post'])
 def publish_servables():
     """Publish a servable via a POST request
 
@@ -261,7 +255,7 @@ def publish_servables():
     return json.dumps(res)
 
 
-@api.route("/publish_repo", methods=['post'])
+@automate_api.route("/publish_repo", methods=['post'])
 def publish_repo_servables():
     """Publish a servable via repo2docker
 
@@ -302,8 +296,9 @@ def publish_repo_servables():
 # Other endpoints #
 ###################
 
-@api.route("/<task_uuid>/status", methods=['GET'])
+@automate_api.route("/<task_uuid>/status", methods=['GET'])
 def status(task_uuid):
+    print('running status')
     """
     Check the status of a task.
 
@@ -335,7 +330,7 @@ def status(task_uuid):
             status = r['status']
             result = r['result']
         res = {'status': status}
-
+        print(result)
         # If the task is using AWS step functions, check the status there
         # TODO (lw): I'm not sure what this does
         if exec_arn:
@@ -354,11 +349,13 @@ def status(task_uuid):
             conn.commit()
         # Otherwise, this is an async request
         else: 
+            if status == 'COMPLETED':
+                status = 'SUCCEEDED'
             job = {
-    "action_id":str(task_uuid),
+    "action_id": 'test', #str(task_uuid),
     "label":"running model",
     "status":(status),
-    "details":{"result":result}
+    "details":{"result":result},
     "start_time":datetime.datetime.utcnow(),
     "release_after":"P30D"
       }
@@ -369,7 +366,7 @@ def status(task_uuid):
         return json.dumps({'InternalError': e})
 
 
-@api.route("/servables", methods=['GET'])
+@automate_api.route("/servables", methods=['GET'])
 def api_servables():
     """
     Get a list of all accessible servables.
@@ -407,7 +404,7 @@ def api_servables():
 
 
 # TODO (LW): Should we change this to the namespace format?
-@api.route("/servables/<servable_uuid>/status", methods=['GET'])
+@automate_api.route("/servables/<servable_uuid>/status", methods=['GET'])
 def api_servable_status(servable_uuid):
     """
     Check the status of a servable.
@@ -439,7 +436,7 @@ def api_servable_status(servable_uuid):
     return json.dumps(status)
 
 
-@api.route("/namespaces", methods=['GET'])
+@automate_api.route("/namespaces", methods=['GET'])
 def get_namespaces():
     """
     Return the current namespace of the user
@@ -454,7 +451,7 @@ def get_namespaces():
     return json.dumps(res)
 
 
-@api.route("/servables/<servable_namespace>/<servable_name>", methods=['DELETE'])
+@automate_api.route("/servables/<servable_namespace>/<servable_name>", methods=['DELETE'])
 def api_delete_servable(servable_namespace, servable_name):
     """
     Delete a servable
