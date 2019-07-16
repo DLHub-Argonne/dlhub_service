@@ -45,11 +45,11 @@ def _perform_invocation(servable_uuid, request, type='test'):
         exec_flag = 2
         site = []
         for s in servable_uuid:
-            site.append(check_user_access(cur, conn, s, user_name))
+            site.append(_check_user_access(cur, conn, s, user_name))
     else:
         site = _check_user_access(cur, conn, servable_uuid, user_name)
-        #exec_flag = 2
-        #site = [site, site, site]
+        # exec_flag = 2
+        # site = [site, site, site]
 
     print(site)
     # Return errors if the user does not have access to the servable
@@ -78,11 +78,13 @@ def _perform_invocation(servable_uuid, request, type='test'):
         obj = (exec_flag, site, data)
 
         # Manage asynchronous request
-        
+
         try:
             task_uuid = str(uuid.uuid4())
             print(task_uuid)
-            req_thread = threading.Thread(target=_async_invocation, args=(obj, task_uuid, servable_uuid, user_id, data, exec_flag))
+            req_thread = threading.Thread(target=_async_invocation,
+                                          args=(obj, task_uuid, servable_uuid,
+                                                user_id, data, exec_flag))
             req_thread.start()
             response = {"task_id": task_uuid}
             print(response)
@@ -140,8 +142,8 @@ def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
 
 @automate_api.route("/run", methods=['POST'])
 def api_run_namespace():
-    payload=request.json['body']
-    #payload=payload['data']
+    payload = request.json['body']
+    # payload=payload['data']
     """
     Invoke a servable.
 
@@ -155,13 +157,13 @@ def api_run_namespace():
     output = _perform_invocation(servable_uuid, request, type='run')
     uuid = output['task_id']
     job = {
-    "action_id":str(uuid),
-    "label":"running model",
-    "status":"ACTIVE",
-    "details":{},
-    "start_time":datetime.datetime.utcnow(),
-    "release_after":"P30D"
-    }
+           "action_id": str(uuid),
+           "label": "running model",
+           "status": "ACTIVE",
+           "details": {},
+           "start_time": datetime.datetime.utcnow(),
+           "release_after": "P30D"
+          }
     return jsonify(job)
 
 
@@ -196,10 +198,8 @@ def api_run_pipeline():
         servable_namespace = x.split('/')[0]
         servable_name = x.split('/')[1]
         resolved_servables.append(_resolve_namespace_model(cur, conn, servable_namespace, servable_name))
-        
     output = _perform_invocation(resolved_servables, request, type='run')
     return output
-
 
 
 ########################
@@ -207,16 +207,28 @@ def api_run_pipeline():
 ########################
 @automate_api.route('/', methods=['POST', 'GET'])
 def introspect():
-    return {'api_version': '1', 'input_schema':
-                                {'servable_namespace':{'type':'string'}, 'servable_name':{'type':'string'} 'required':['servable_namespace', 'servable_name'],
-                                 'data':{'type':'json'}},
-                                 'keywords':['dlhub', 'ml','models'],
-                                 'log_support':'false',
-                                 'runnable_by':'all_authenticated_users',
-                                 'subtitle':'Running models with dlhub',
-                                 'synchronous':'true',
-                                 'title':'DLHub',
-                                 'visible_to':'all_authenticated_users'}
+    """introspect()
+
+    Returns
+    _______
+
+    introspect compatible json blob
+
+
+   """
+    return jsonify({'api_version': '1', 'input_schema':
+                    {'servable_namespace': {'type': 'string'}, 'servable_name': {'type': 'string'},
+                     'required': ['servable_namespace', 'servable_name'],
+                     'data': {'type': 'json'}},
+                    'keywords': ['dlhub', 'ml', 'models'],
+                    'log_support': 'false',
+                    'runnable_by': 'all_authenticated_users',
+                    'subtitle': 'Running models with dlhub',
+                    'synchronous': 'true',
+                    'title': 'DLHub',
+                    'visible_to': 'all_authenticated_users'})
+
+
 @automate_api.route("/publish", methods=['post'])
 def publish_servables():
     """Publish a servable via a POST request
@@ -235,7 +247,7 @@ def publish_servables():
     if not request.json:
         try:
             posted_file = request.files['file']
-            posted_data = json.load(request.files['json'])             
+            posted_data = json.load(request.files['json'])
             storage_path = os.path.join("/mnt/tmp", secure_filename(posted_file.filename))
             posted_file.save(storage_path)
             input_data = posted_data
@@ -359,17 +371,17 @@ def status(task_uuid):
             cur.execute(query)
             conn.commit()
         # Otherwise, this is an async request
-        else: 
+        else:
             if status == 'COMPLETED':
                 status = 'SUCCEEDED'
             job = {
-    "action_id": 'test', #str(task_uuid),
-    "label":"running model",
-    "status":(status),
-    "details":{"result":result},
-    "start_time":datetime.datetime.utcnow(),
-    "release_after":"P30D"
-      }
+                   "action_id": 'test',   # str(task_uuid),
+                   "label": "running model",
+                   "status": (status),
+                   "details": {"result": result},
+                   "start_time": datetime.datetime.utcnow(),
+                   "release_after": "P30D"
+                  }
             res = {'status': status, 'result': result}
         return json.dumps(job, default=str)
     except Exception as e:
@@ -481,7 +493,7 @@ def api_delete_servable(servable_namespace, servable_name):
     cur.execute(query)
     rows = cur.fetchall()
     if len(rows) == 0:
-        return json.dumps({'status':'Failed to delete: permission denied or no servable found.'})
+        return json.dumps({'status': 'Failed to delete: permission denied or no servable found.'})
 
     query = "update servables set status = 'DELETED' where uuid = '{0}'".format(servable_uuid)
     try:
