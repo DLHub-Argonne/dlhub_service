@@ -205,7 +205,18 @@ def api_run_pipeline():
 ########################
 # SERVABLE PUBLICATION #
 ########################
-
+@automate_api.route('/', methods=['POST', 'GET'])
+def introspect():
+    return {'api_version': '1', 'input_schema':
+                                {'servable_namespace':{'type':'string'}, 'servable_name':{'type':'string'} 'required':['servable_namespace', 'servable_name'],
+                                 'data':{'type':'json'}},
+                                 'keywords':['dlhub', 'ml','models'],
+                                 'log_support':'false',
+                                 'runnable_by':'all_authenticated_users',
+                                 'subtitle':'Running models with dlhub',
+                                 'synchronous':'true',
+                                 'title':'DLHub',
+                                 'visible_to':'all_authenticated_users'}
 @automate_api.route("/publish", methods=['post'])
 def publish_servables():
     """Publish a servable via a POST request
