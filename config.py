@@ -37,6 +37,7 @@ def _get_db_connection():
                                                        dbpass=DB_PASSWORD, dbhost=DB_HOST)
 
     conn = psycopg2.connect(con_str)
+#    conn.setAutoCommit(true);
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     return conn, cur

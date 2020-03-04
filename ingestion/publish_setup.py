@@ -189,7 +189,26 @@ def ingest(task, client):
     try:
         stage_files(model_location, working_dir)
     except Exception as e:
-        logging.error("Error staging data: ", e)
+        logging.error(f"Error staging data: {e}")
+
+    create_requirements_file(task, working_dir)
+
+    # Add an enviornment.yml file to specify python version
+    
+    env_file = f"{working_dir}/environment.yml"
+    req_file = f"{working_dir}/requirements.txt"
+    if os.path.exists(req_file):
+        with open(f"{working_dir}/runtime.txt", 'w') as rt:
+            rt.write("python-3.6")
+
+    elif not os.path.exists(env_file):
+        # Note, parsl requires 3.6. Docs need to reflect that we create this and if they
+        # already have one we'll need them to specify 3.6
+        with open(env_file, 'w') as env_f:
+            env_f.write("""name: dlhub
+
+dependencies:
+  - python=3.6""")
 
 
     tmp_image = "{0}-tmp".format(working_image)
@@ -212,6 +231,31 @@ def ingest(task, client):
     task['dlhub']['build_location'] = working_dir
 
     return task
+
+
+def create_requirements_file(task, working_dir):
+    """
+    Create a requirements file to be pip installed. Iterate through
+    the dependencies and add them. Also include parsl, toolbox, home_run, etc.
+
+    :param task:
+    :param working_dir:
+    :return:
+    """
+
+    # Get the list of requirements from the schema
+    dependencies = []
+    try:
+        for k, v in task['dlhub']['dependencies']['python'].items():
+            dependencies.append("{0}=={1}".format(k, v))
+    except:
+        # There are no python dependencies
+        pass
+
+    if len(dependencies) > 0:
+        with open("{}/requirements.txt".format(working_dir), "a") as fp:
+            for dep in dependencies:
+                fp.write(dep + "\n")
 
 
 def monitor():

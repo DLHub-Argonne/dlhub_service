@@ -64,7 +64,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
 
     # Get the input data for the function
     input_data = request.json['body']['input_data']
-
+    print('input_data: ', input_data)
     # Perform the invocation
     try:
         data = []
@@ -73,7 +73,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
         elif 'python' in input_data:
             # TODO (lw): Is decoding in the web service dangerous? Should we push this to the shim?
             data = jsonpickle.decode(input_data['python'])
-
+        print('got data: ', data)
         # Send request to service
         obj = (exec_flag, site, data)
 
@@ -118,14 +118,16 @@ def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
     """
 
     _create_task(cur, conn, '', '', task_uuid, 'invocation', '')
-
+    if not data:
+        data = []
     request_start = time.time()
     res = zmq_server.request(pickle.dumps(obj))
     response = pickle.loads(res)
     request_end = time.time()
-
-    _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
-
+    try:
+        _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
+    except:
+        pass
     status = 'COMPLETED'
 
     output = 'Error: Internal Service Error'
@@ -135,9 +137,12 @@ def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
     except Exception as e:
         output = json.dumps({"InternalError": "Failed to return output: %s" % e})
 
-    query = "UPDATE tasks set status = '%s', result = '%s' where uuid = '%s'" % (status, output, task_uuid)
-    cur.execute(query)
-    conn.commit()
+    try:
+        query = "UPDATE tasks set status = %s, result = %s where uuid = %s"
+        cur.execute(query, (status, output, task_uuid))
+        conn.commit()
+    except Exception as e:
+        print("Failed to update tasks:", e)
 
 
 @automate_api.route("/run", methods=['POST'])
@@ -375,7 +380,7 @@ def status(task_uuid):
             if status == 'COMPLETED':
                 status = 'SUCCEEDED'
             job = {
-                   "action_id": 'test',   # str(task_uuid),
+                   "action_id": str(task_uuid),
                    "label": "running model",
                    "status": (status),
                    "details": {"result": result},

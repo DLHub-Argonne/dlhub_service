@@ -3,9 +3,15 @@ import json
 import subprocess
 import os
 import mdf_toolbox
+import urllib
 import logging
 import psycopg2
 import psycopg2.extras
+
+from funcx.sdk.client import FuncXClient
+
+from identifiers_client.identifiers_api import identifiers_client, IdentifierClient
+from identifiers_client.config import config
 
 client = boto3.client('stepfunctions')
 
@@ -84,7 +90,117 @@ def dockerize(task, client):
     task['dlhub']['ecr_uri'] = ecr_uri
     task['dlhub']['ecr_arn'] = ecr_arn
 
+    funcx_id = register_funcx(task)
+    task['dlhub']['funcx_id'] = funcx_id
+    identifier = mint_identifier(task)
+    if identifier:
+        task['dlhub']['identifier'] = identifier
+        try:
+            # Check if an identifier exists:
+            if task['dlhub']['identifier'] == "10.YET/UNASSIGNED":
+                task['datacite']['identifier']['identifier'] = identifier
+                task['datacite']['identifier']['identifierType'] = 'Globus'
+            else:
+                # If one exists, add as a related identifier
+                rel_iden = {'relatedIdentifier': identifier, 'relatedIdentifierType': 'Globus', 
+                            'relationType': 'IsDescribedBy'}
+                if 'relatedIdentifiers' in task['datacite']:
+                    task['datacite']['relatedIdentifiers'].append(rel_iden)
+                else:
+                    task['datacite']['relatedIdentifiers'] = [rel_iden]
+        except Exception as e:
+            logging.debug(e)
     return task
+
+
+def mint_identifier(task):
+    """Mint a new identifier and return it."""
+    identifiers_namespace = '1EGOGHSs9RAtq'
+    identifier = None
+    logging.debug("Creating identifier")
+    try:
+        client = identifiers_client(config)
+        serv_location = "https://%s%s" % ("dlhub.org/servables/", task['dlhub']['id'])
+        # safe encode the location
+        serv_location = urllib.parse.quote_plus(serv_location, safe='')
+        # can't be too safe!
+        serv_location = urllib.parse.quote_plus(serv_location, safe='')
+        # Create the petrel link
+        serv_location = f'https://petreldata.net/dlhub/detail/{serv_location}'
+        visible_to = ['public']
+
+        dataset_identifier = client.create_identifier(
+            namespace=identifiers_namespace,
+            location=[serv_location],
+            metadata={
+                'uuid': task['dlhub']['id'],
+                'shorthand_name': task['dlhub']['shorthand_name']
+            },
+            landing_page=serv_location,
+            visible_to=visible_to)
+
+        res = dataset_identifier.data
+        identifier = res['identifier']
+        logging.debug(f"Created identifier: {identifier}")
+    except Exception as e:
+        logging.error(e)
+    return identifier
+
+def dlhub_run(event):
+    import json
+    import time
+    import os
+    
+    from os.path import expanduser
+    path = expanduser("~")
+    os.chdir(path)
+
+    start = time.time()
+    global shim
+    if "shim" not in globals():
+        from home_run import create_servable
+        with open("dlhub.json") as fp:
+            shim = create_servable(json.load(fp))
+    x = shim.run(event["data"])
+    end = time.time()
+    return (x, (end-start) * 1000)
+
+
+def register_funcx(task):
+    """Register the function and the container with funcX.
+
+    Parameters
+    ----------
+    task : dict
+        A dict of the task to publish
+
+    Returns
+    -------
+    str
+        The funcX function id
+    """
+    fxc = FuncXClient(funcx_service_address='https://dev.funcx.org/api/v1')
+    description = f"A container for the DLHub model {task['dlhub']['shorthand_name']}"
+    try:
+        description = task['datacite']['descriptions'][0]['description']
+    except:
+        # It doesn't have a simple description
+        pass
+    # Register the container with funcX
+    container_id = fxc.register_container(task['dlhub']['ecr_uri'], 'docker', name=task['dlhub']['shorthand_name'], 
+                                          description=description)
+
+    # Register a function
+    funcx_id = fxc.register_function(dlhub_run, function_name=task['dlhub']['name'],
+                                     container_uuid=container_id, description=description)
+
+    # Whitelist the function on DLHub's endpoint
+    endpoint_uuid = '86a47061-f3d9-44f0-90dc-56ddc642c000'
+    res = fxc.add_to_whitelist(endpoint_uuid, [funcx_id])
+    print(res)
+    return funcx_id
+
+
 
 def convert_dict(data, conversion_function=str):
     if type(data) is dict:
@@ -125,7 +241,7 @@ def search_ingest(task):
         glist.append(gmeta_entry)
     gingest = mdf_toolbox.format_gmeta(glist)
 
-    ingest_client = mdf_toolbox.login(services=["search_ingest"])["search_ingest"]
+    ingest_client = mdf_toolbox.login(services=["search_ingest"],no_local_server=True,no_browser=True)["search_ingest"]
     ingest_client.ingest(idx, gingest)
     logging.info("Ingestion of {} to DLHub servables complete".format(iden))
 
