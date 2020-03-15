@@ -10,7 +10,7 @@ from config import _load_dlhub_client
 from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_model,
                     _check_user_access, _log_invocation, _get_dlhub_file_from_github,
                     _create_task)
-from flask import Blueprint, request, abort
+from flask import Blueprint, request, abort, jsonify
 from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
 
@@ -120,7 +120,7 @@ def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
     """
     Perform an asynchronous invocation to a servable then update the database once the task completes.
     """
-
+    return jsonify({"error": "This function is now deprecated. Please update your dlhub_sdk."})
     _create_task(cur, conn, '', '', task_uuid, 'invocation', '')
 
     request_start = time.time()
@@ -155,6 +155,7 @@ def api_run_namespace(servable_namespace, servable_name):
     Returns:
         (str): Response from the servable
     """
+    return jsonify({"error": "This function is now deprecated. Please update your dlhub_sdk."})
     servable_uuid = _resolve_namespace_model(cur, conn, servable_namespace, servable_name)
     output = _perform_invocation(servable_uuid, request, type='run')
     return output
@@ -170,6 +171,7 @@ def api_run(servable_uuid):
     :param servable_uuid:
     :return:
     """
+    return jsonify({"error": "This function is now deprecated. Please update your dlhub_sdk."})
     output = _perform_invocation(servable_uuid, request, type='run')
     return output
 
@@ -182,6 +184,7 @@ def api_run_pipeline():
     Returns:
         (str): Response from the servables
     """
+    return jsonify({"error": "This function is now deprecated. Please update your dlhub_sdk."})
     servables = []
     if 'servables' in request.json():
         servables = request.json()['servables']
