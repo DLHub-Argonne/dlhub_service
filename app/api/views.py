@@ -240,10 +240,10 @@ def publish_servables():
         try:
             client = _load_dlhub_client()
             auth_detail = client.oauth2_get_dependent_tokens(token)
-            input_data['dlhub']['funcx_token'] = auth_detail['funcx_service']['access_token']
+            fx_auth = auth_detail.by_scopes['https://auth.globus.org/scopes/facd7ccc-c5f4-42aa-916b-a0e270e2c2a9/all']
+            input_data['dlhub']['funcx_token'] = fx_auth['access_token']
         except Exception as e:
             print(e)
-
     # Insert owner name and time-stamp into metadata
     input_data['dlhub']['owner'] = short_name
     input_data['dlhub']['publication_date'] = int(round(time.time() * 1000))

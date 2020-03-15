@@ -5,6 +5,7 @@ import os
 import mdf_toolbox
 import urllib
 import logging
+import globus_sdk
 import psycopg2
 import psycopg2.extras
 
@@ -91,6 +92,9 @@ def dockerize(task, client):
     task['dlhub']['ecr_arn'] = ecr_arn
 
     funcx_id = register_funcx(task)
+    if 'funcx_token' in task['dlhub']:
+        del(task['dlhub']['funcx_token'])
+    
     task['dlhub']['funcx_id'] = funcx_id
     identifier = mint_identifier(task)
     if identifier:
@@ -179,7 +183,12 @@ def register_funcx(task):
     str
         The funcX function id
     """
-    fxc = FuncXClient(funcx_service_address='https://dev.funcx.org/api/v1')
+
+    # Get the funcX dependent token
+    fx_token = task['dlhub']['funcx_token']
+    # Create a client using this token
+    fx_auth = globus_sdk.AccessTokenAuthorizer(fx_token)
+    fxc = FuncXClient(fx_authorizer=fx_auth,funcx_service_address='https://dev.funcx.org/api/v1')
     description = f"A container for the DLHub model {task['dlhub']['shorthand_name']}"
     try:
         description = task['datacite']['descriptions'][0]['description']
@@ -192,9 +201,11 @@ def register_funcx(task):
 
     # Register a function
     funcx_id = fxc.register_function(dlhub_run, function_name=task['dlhub']['name'],
-                                     container_uuid=container_id, description=description)
+                                     container_uuid=container_id, description=description, public=True)
 
     # Whitelist the function on DLHub's endpoint
+    # First create a new fxc client on DLHub's behalf
+    fxc = FuncXClient(funcx_service_address='https://dev.funcx.org/api/v1')
     endpoint_uuid = '86a47061-f3d9-44f0-90dc-56ddc642c000'
     res = fxc.add_to_whitelist(endpoint_uuid, [funcx_id])
     print(res)
