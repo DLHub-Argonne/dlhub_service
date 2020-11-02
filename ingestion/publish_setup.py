@@ -161,6 +161,8 @@ def ingest(task, client):
     logging.debug("Starting ingest")
     if 'dlhub' not in task:
         task['dlhub'] = {}
+    if 'test' not in task['dlhub']:
+        task['dlhub']['test'] = False
 
     model_location = None
     if 'S3' in task['dlhub']['transfer_method']:

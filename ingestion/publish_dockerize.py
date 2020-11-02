@@ -96,7 +96,8 @@ def dockerize(task, client):
         del(task['dlhub']['funcx_token'])
     
     task['dlhub']['funcx_id'] = funcx_id
-    identifier = mint_identifier(task)
+#    identifier = mint_identifier(task)
+    identifier = None
     if identifier:
         task['dlhub']['identifier'] = identifier
         try:
@@ -246,13 +247,16 @@ def search_ingest(task):
     d = [convert_dict(ingestable, str)]
 
     glist = []
+    visible_to = task['dlhub'].get('visible_to', ['public'])
 
     for document in d:
-        gmeta_entry = mdf_toolbox.format_gmeta(document, ["public"], iden)
+        gmeta_entry = mdf_toolbox.format_gmeta(document, visible_to, iden)
         glist.append(gmeta_entry)
     gingest = mdf_toolbox.format_gmeta(glist)
 
     ingest_client = mdf_toolbox.login(services=["search_ingest"],no_local_server=True,no_browser=True)["search_ingest"]
+    logging.info("ingesting to search")
+    logging.info(gingest)
     ingest_client.ingest(idx, gingest)
     logging.info("Ingestion of {} to DLHub servables complete".format(iden))
 
