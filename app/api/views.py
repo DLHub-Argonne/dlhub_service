@@ -23,8 +23,8 @@ conn, cur = _get_db_connection()
 api = Blueprint("api", __name__)
 
 # ZMQ
-zmq_server = ZMQServer()
-
+#zmq_server = ZMQServer()
+zmq_server = None
 
 def _perform_invocation(servable_uuid, request, type='test'):
     """Invoke a servable

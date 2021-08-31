@@ -202,7 +202,7 @@ def ingest(task, client):
     req_file = f"{working_dir}/requirements.txt"
     if os.path.exists(req_file):
         with open(f"{working_dir}/runtime.txt", 'w') as rt:
-            rt.write("python-3.6")
+            rt.write("python-3.7")
 
     elif not os.path.exists(env_file):
         # Note, parsl requires 3.6. Docs need to reflect that we create this and if they

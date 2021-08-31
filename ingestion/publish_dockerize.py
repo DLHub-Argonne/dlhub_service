@@ -151,15 +151,19 @@ def mint_identifier(task):
         logging.error(e)
     return identifier
 
+
 def dlhub_run(event):
     import json
     import time
+    import sys
     import os
-    
+
     from os.path import expanduser
     path = expanduser("~")
     os.chdir(path)
 
+    sys.path.append(os.getcwd())
+    
     start = time.time()
     global shim
     if "shim" not in globals():
