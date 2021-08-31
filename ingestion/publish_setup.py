@@ -128,8 +128,9 @@ def _configure_build_env(servable_uuid, working_dir, working_image, dlhub_json_f
 
 ADD . {1}
 
-RUN pip install parsl==0.6.1
+RUN pip install parsl
 RUN pip install dlhub_sdk
+RUN pip install funcx
 RUN pip install git+git://github.com/DLHub-Argonne/home_run.git
 """.format(working_image, IMAGE_HOME)
 
@@ -210,7 +211,7 @@ def ingest(task, client):
             env_f.write("""name: dlhub
 
 dependencies:
-  - python=3.6""")
+  - python=3.7""")
 
 
     tmp_image = "{0}-tmp".format(working_image)
