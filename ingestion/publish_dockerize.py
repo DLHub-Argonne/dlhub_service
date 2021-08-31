@@ -189,7 +189,8 @@ def register_funcx(task):
     fx_token = task['dlhub']['funcx_token']
     # Create a client using this token
     fx_auth = globus_sdk.AccessTokenAuthorizer(fx_token)
-    fxc = FuncXClient(fx_authorizer=fx_auth,funcx_service_address='https://dev.funcx.org/api/v1')
+    #fxc = FuncXClient(fx_authorizer=fx_auth,funcx_service_address='https://dev.funcx.org/api/v1')
+    fxc = FuncXClient(fx_authorizer=fx_auth,funcx_service_address='https://api.funcx.org/v1')
     description = f"A container for the DLHub model {task['dlhub']['shorthand_name']}"
     try:
         description = task['datacite']['descriptions'][0]['description']
@@ -206,12 +207,11 @@ def register_funcx(task):
 
     # Whitelist the function on DLHub's endpoint
     # First create a new fxc client on DLHub's behalf
-    fxc = FuncXClient(funcx_service_address='https://dev.funcx.org/api/v1')
+    fxc = FuncXClient(funcx_service_address='https://api.funcx.org/v1')
     endpoint_uuid = '86a47061-f3d9-44f0-90dc-56ddc642c000'
     res = fxc.add_to_whitelist(endpoint_uuid, [funcx_id])
     print(res)
     return funcx_id
-
 
 
 def convert_dict(data, conversion_function=str):
@@ -239,7 +239,8 @@ def search_ingest(task):
     """
     logging.debug("Ingesting servable into Search.")
 
-    idx = "dlhub"
+#    idx = "dlhub"
+    idx = '847c9105-18a0-4ffb-8a71-03dd76dfcc9d'
     iden = "https://dlhub.org/servables/{}".format(task['dlhub']['id'])
     index = mdf_toolbox.translate_index(idx)
 
