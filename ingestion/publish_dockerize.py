@@ -250,6 +250,10 @@ def search_ingest(task):
     glist = []
     visible_to = task['dlhub'].get('visible_to', ['public'])
 
+    # Add public so it isn't an empty list
+    if len(visible_to) == 0:
+        visible_to = ['public']
+
     for document in d:
         gmeta_entry = mdf_toolbox.format_gmeta(document, visible_to, iden)
         glist.append(gmeta_entry)
