@@ -213,7 +213,6 @@ def register_funcx(task):
     return funcx_id
 
 
-
 def convert_dict(data, conversion_function=str):
     if type(data) is dict:
         string_dict = {}
@@ -239,7 +238,8 @@ def search_ingest(task):
     """
     logging.debug("Ingesting servable into Search.")
 
-    idx = "dlhub"
+#    idx = "dlhub"
+    idx = '847c9105-18a0-4ffb-8a71-03dd76dfcc9d'
     iden = "https://dlhub.org/servables/{}".format(task['dlhub']['id'])
     index = mdf_toolbox.translate_index(idx)
 
