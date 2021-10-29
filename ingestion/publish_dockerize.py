@@ -190,7 +190,7 @@ def register_funcx(task):
     fx_token = task['dlhub']['funcx_token']
     # Create a client using this token
     fx_auth = globus_sdk.AccessTokenAuthorizer(fx_token)
-    fxc = FuncXClient(fx_authorizer=fx_auth)
+    fxc = FuncXClient(fx_authorizer=fx_auth, use_offprocess_checker=False)
     description = f"A container for the DLHub model {task['dlhub']['shorthand_name']}"
     try:
         description = task['datacite']['descriptions'][0]['description']
