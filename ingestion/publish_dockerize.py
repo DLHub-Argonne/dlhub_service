@@ -207,7 +207,7 @@ def register_funcx(task):
 
     # Whitelist the function on DLHub's endpoint
     # First create a new fxc client on DLHub's behalf
-    fxc = FuncXClient()
+    fxc = FuncXClient(use_offprocess_checker=False)
     endpoint_uuid = '86a47061-f3d9-44f0-90dc-56ddc642c000'
     res = fxc.add_to_whitelist(endpoint_uuid, [funcx_id])
     print(res)
