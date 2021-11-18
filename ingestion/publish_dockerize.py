@@ -153,6 +153,7 @@ def mint_identifier(task):
 
 
 def dlhub_run(event):
+    """Invoke the DLHub servable"""
     import json
     import time
     import os
@@ -160,6 +161,10 @@ def dlhub_run(event):
     from os.path import expanduser
     path = expanduser("~")
     os.chdir(path)
+    
+    # Check to see if event is from old client
+    if 'data' in event:
+        raise ValueError('Upgrade your DLHub SDK to a newer version: pip install -U dlhub_sdk')
 
     start = time.time()
     global shim
@@ -167,7 +172,9 @@ def dlhub_run(event):
         from home_run import create_servable
         with open("dlhub.json") as fp:
             shim = create_servable(json.load(fp))
-    x = shim.run(event["data"])
+    x = shim.run(event["inputs"], 
+                 debug=event.get("debug", False),
+                 parameters=event.get("parameters", None))
     end = time.time()
     return (x, (end-start) * 1000)
 
