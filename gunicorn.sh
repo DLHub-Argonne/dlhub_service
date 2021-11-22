@@ -24,4 +24,4 @@ exec gunicorn run:app -b 0.0.0.0:8080 \
   --keyfile $KEY_FILE \
   --user=$USER --group=$GROUP \
   --bind=unix:$SOCKFILE \
-  --timeout 600
+  --timeout 900

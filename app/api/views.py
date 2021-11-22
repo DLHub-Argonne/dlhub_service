@@ -6,11 +6,11 @@ import json
 import uuid
 import time
 import os
-
+from config import _load_dlhub_client
 from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_model,
                     _check_user_access, _log_invocation, _get_dlhub_file_from_github,
                     _create_task)
-from flask import Blueprint, request, abort
+from flask import Blueprint, request, abort, jsonify
 from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
 
@@ -23,8 +23,8 @@ conn, cur = _get_db_connection()
 api = Blueprint("api", __name__)
 
 # ZMQ
-zmq_server = ZMQServer()
-
+#zmq_server = ZMQServer()
+zmq_server = None
 
 def _perform_invocation(servable_uuid, request, type='test'):
     """Invoke a servable
@@ -81,8 +81,8 @@ def _perform_invocation(servable_uuid, request, type='test'):
         if 'asynchronous' in input_data:
             async_val = input_data['asynchronous']
 
+        task_uuid = str(uuid.uuid4())
         if async_val:
-            task_uuid = str(uuid.uuid4())
             req_thread = threading.Thread(target=_async_invocation, args=(obj, task_uuid, servable_uuid, user_id, data, exec_flag))
             req_thread.start()
             response = {"task_id": task_uuid}
@@ -94,7 +94,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
             response = pickle.loads(res)
             request_end = time.time()
 
-            _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
+            _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag, task_uuid)
 
     except Exception as e:
         print("Failed to perform invocation %s" % e)
@@ -120,7 +120,7 @@ def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
     """
     Perform an asynchronous invocation to a servable then update the database once the task completes.
     """
-
+    return jsonify({"error": "This function is now deprecated. Please update your dlhub_sdk."})
     _create_task(cur, conn, '', '', task_uuid, 'invocation', '')
 
     request_start = time.time()
@@ -128,7 +128,7 @@ def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
     response = pickle.loads(res)
     request_end = time.time()
 
-    _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag)
+    _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, data, exec_flag, task_uuid)
 
     status = 'COMPLETED'
 
@@ -139,8 +139,8 @@ def _async_invocation(obj, task_uuid, servable_uuid, user_id, data, exec_flag):
     except Exception as e:
         output = json.dumps({"InternalError": "Failed to return output: %s" % e})
 
-    query = "UPDATE tasks set status = '%s', result = '%s' where uuid = '%s'" % (status, output, task_uuid)
-    cur.execute(query)
+    query = "UPDATE tasks set status = %s, result = %s where uuid = %s"
+    cur.execute(query, (status, output, task_uuid))
     conn.commit()
 
 
@@ -155,6 +155,7 @@ def api_run_namespace(servable_namespace, servable_name):
     Returns:
         (str): Response from the servable
     """
+    return jsonify({"error": "This function is now deprecated. Please update your dlhub_sdk."})
     servable_uuid = _resolve_namespace_model(cur, conn, servable_namespace, servable_name)
     output = _perform_invocation(servable_uuid, request, type='run')
     return output
@@ -170,6 +171,7 @@ def api_run(servable_uuid):
     :param servable_uuid:
     :return:
     """
+    return jsonify({"error": "This function is now deprecated. Please update your dlhub_sdk."})
     output = _perform_invocation(servable_uuid, request, type='run')
     return output
 
@@ -182,6 +184,7 @@ def api_run_pipeline():
     Returns:
         (str): Response from the servables
     """
+    return jsonify({"error": "This function is now deprecated. Please update your dlhub_sdk."})
     servables = []
     if 'servables' in request.json():
         servables = request.json()['servables']
@@ -232,6 +235,18 @@ def publish_servables():
     if not input_data:
         abort(400, description="Failed to load app.json input data")
 
+    # Get a dependent token for funcX
+    if 'Authorization' in request.headers:
+        token = request.headers.get('Authorization')
+
+        token = token.split(" ")[1]
+        try:
+            client = _load_dlhub_client()
+            auth_detail = client.oauth2_get_dependent_tokens(token)
+            fx_auth = auth_detail.by_scopes['https://auth.globus.org/scopes/facd7ccc-c5f4-42aa-916b-a0e270e2c2a9/all']
+            input_data['dlhub']['funcx_token'] = fx_auth['access_token']
+        except Exception as e:
+            print(e)
     # Insert owner name and time-stamp into metadata
     input_data['dlhub']['owner'] = short_name
     input_data['dlhub']['publication_date'] = int(round(time.time() * 1000))
@@ -313,9 +328,10 @@ def status(task_uuid):
         exec_arn = None
         status = None
         result = ''
+        invocation_time = None
 
         # Find the status ID from the database
-        cur.execute("SELECT * from tasks where uuid = '%s'" % task_uuid)
+        cur.execute("SELECT * from tasks, invocation_logs where tasks.uuid = '%s' and tasks.uuid = invocation_logs.task_uuid" % task_uuid)
         rows = cur.fetchall()
 
         # Get the most-recent status message
@@ -323,7 +339,8 @@ def status(task_uuid):
             exec_arn = r['arn']
             status = r['status']
             result = r['result']
-        res = {'status': status}
+            invocation_time = r['invocation']
+        res = {'status': status, 'invocation_time': invocation_time}
 
         # If the task is using AWS step functions, check the status there
         # TODO (lw): I'm not sure what this does
@@ -343,7 +360,7 @@ def status(task_uuid):
             conn.commit()
         # Otherwise, this is an async request
         else:
-            res = {'status': status, 'result': result}
+            res = {'status': status, 'result': result, 'invocation_time': invocation_time}
         return json.dumps(res, default=str)
     except Exception as e:
         print(e)

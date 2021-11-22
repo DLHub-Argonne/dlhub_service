@@ -53,7 +53,7 @@ def stage_files(location, working_dir):
         os.mkdir(working_dir)
         os.rename(location, "{0}/{1}".format(working_dir, location.replace("/mnt/tmp/", '')))
 
-    logging.debug("Extracting data: ", working_dir)
+    logging.debug(f"Extracting data: {working_dir}")
     # Extract any zip files
     cwd = os.getcwd()
     os.chdir(working_dir)
@@ -128,8 +128,9 @@ def _configure_build_env(servable_uuid, working_dir, working_image, dlhub_json_f
 
 ADD . {1}
 
-RUN pip install parsl==0.6.1
+RUN pip install parsl
 RUN pip install dlhub_sdk
+RUN pip install funcx
 RUN pip install git+git://github.com/DLHub-Argonne/home_run.git
 """.format(working_image, IMAGE_HOME)
 
@@ -161,6 +162,8 @@ def ingest(task, client):
     logging.debug("Starting ingest")
     if 'dlhub' not in task:
         task['dlhub'] = {}
+    if 'test' not in task['dlhub']:
+        task['dlhub']['test'] = False
 
     model_location = None
     if 'S3' in task['dlhub']['transfer_method']:
@@ -178,8 +181,9 @@ def ingest(task, client):
         task['dlhub']['user_id'] = task['user_id']
         task['dlhub']['shorthand_name'] = task['shorthand_name']
     except Exception as e:
-        logging.error('key moved: ', e)
+        logging.error(f'key moved: {e}')
         logging.debug('continuing')
+    logging.debug(task)
 
     working_name = "{0}-{1}".format(servable_uuid, str(time.time()).split(".")[0])
     working_dir = ("%s/%s" % (BASE_WORKING_DIR, working_name)).replace("//", "/")
@@ -188,7 +192,26 @@ def ingest(task, client):
     try:
         stage_files(model_location, working_dir)
     except Exception as e:
-        logging.error("Error staging data: ", e)
+        logging.error(f"Error staging data: {e}")
+
+    create_requirements_file(task, working_dir)
+
+    # Add an enviornment.yml file to specify python version
+    
+    env_file = f"{working_dir}/environment.yml"
+    req_file = f"{working_dir}/requirements.txt"
+    if os.path.exists(req_file):
+        with open(f"{working_dir}/runtime.txt", 'w') as rt:
+            rt.write("python-3.7")
+
+    elif not os.path.exists(env_file):
+        # Note, parsl requires 3.6. Docs need to reflect that we create this and if they
+        # already have one we'll need them to specify 3.6
+        with open(env_file, 'w') as env_f:
+            env_f.write("""name: dlhub
+
+dependencies:
+  - python=3.7""")
 
 
     tmp_image = "{0}-tmp".format(working_image)
@@ -206,12 +229,36 @@ def ingest(task, client):
     logging.debug('Running repo2docker the second time')
     cmd = "jupyter-repo2docker --no-run --image-name {0} {1}".format(working_image,
                                                                      working_dir)
-
     subprocess.call(cmd.split(" "))
 
     task['dlhub']['build_location'] = working_dir
 
     return task
+
+
+def create_requirements_file(task, working_dir):
+    """
+    Create a requirements file to be pip installed. Iterate through
+    the dependencies and add them. Also include parsl, toolbox, home_run, etc.
+
+    :param task:
+    :param working_dir:
+    :return:
+    """
+
+    # Get the list of requirements from the schema
+    dependencies = []
+    try:
+        for k, v in task['dlhub']['dependencies']['python'].items():
+            dependencies.append("{0}=={1}".format(k, v))
+    except:
+        # There are no python dependencies
+        pass
+
+    if len(dependencies) > 0:
+        with open("{}/requirements.txt".format(working_dir), "a") as fp:
+            for dep in dependencies:
+                fp.write(dep + "\n")
 
 
 def monitor():
