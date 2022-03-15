@@ -131,7 +131,7 @@ ADD . {1}
 RUN pip install parsl
 RUN pip install dlhub_sdk
 RUN pip install funcx
-RUN pip install git+git://github.com/DLHub-Argonne/home_run.git
+RUN pip install git+https://github.com/DLHub-Argonne/home_run.git
 """.format(working_image, IMAGE_HOME)
 
     with open("%s/Dockerfile" % (working_dir), 'w') as new_docker:
