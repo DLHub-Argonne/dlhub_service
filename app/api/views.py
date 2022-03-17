@@ -7,9 +7,8 @@ import uuid
 import time
 import os
 from config import _load_dlhub_client
-from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_model,
-                    _check_user_access, _log_invocation, _get_dlhub_file_from_github,
-                    _create_task)
+from .utils import (_get_user, _start_flow, _resolve_namespace_model, _get_dlhub_file_from_github,
+                    create_presigned_post)
 from flask import Blueprint, request, abort, jsonify
 from werkzeug.utils import secure_filename
 
@@ -84,6 +83,35 @@ def publish_servables():
     res['servable'] = shorthand_name
 
     return json.dumps(res)
+
+
+@api.route("/publish/signed_url", methods=['GET'])
+def get_signed_url():
+    """Get a signed URL for S3. This is used to upload large files out-of-band 
+    of the containerization process.
+
+    Returns:
+        str: JSON-encoded signed url
+    """
+    
+    # Create a uuid name for the zip file
+    tmp_uuid = uuid.uuid4()
+    objname = "container_uploads/" + str(tmp_uuid)[:8] + ".zip"
+
+    signed_url = create_presigned_post('dlhub-anl', object_name=objname)
+
+    response = {'status': 'COMPLETED'}
+    final_http_status = 200
+    try:
+        response['url'] = signed_url['url']
+        response['fields'] = signed_url['fields']
+    except Exception as e:
+        # Failed to create a signed URL
+        print(e)
+        response = {'status': 'FAILED'}
+        final_http_status = 500
+
+    return jsonify(response), final_http_status
 
 
 @api.route("/publish_repo", methods=['post'])
