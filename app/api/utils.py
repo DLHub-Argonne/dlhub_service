@@ -80,55 +80,6 @@ def _create_task(cur, conn, input_data, response, task_uuid, task_type='ingest',
     return res
 
 
-def _log_invocation(cur, conn, response, request_start, request_end, servable_uuid, user_id, input_data, input_type, task_uuid):
-    """
-    Log the invocation time in the database.
-
-    :return:
-    """
-    try:
-        invocation_time = 'NULL'
-        if 'invocation_time' in response:
-            invocation_time = response['invocation_time']
-        request_time = (request_end - request_start) * 1000
-        query = "INSERT INTO invocation_logs (servable, input, invocation," \
-                " request, function, user_id, task_uuid) values (%s, %s, %s, %s, %s, %s, %s)"
-        cur.execute(query, (servable_uuid, len(input_data), invocation_time, request_time, input_type, user_id, task_uuid))
-        conn.commit()
-    except Exception as e:
-        print(e)
-
-
-def _decode_result(tmp_res_lst):
-    """
-    Try to decode the result to make it jsonifiable.
-
-    :param response_list:
-    :return: jsonifiable list
-    """
-
-    response_list = []
-    if isinstance(tmp_res_lst, list):
-        for tmp_res in tmp_res_lst:
-            if isinstance(tmp_res, np.ndarray):
-                response_list.append(tmp_res.tolist())
-            else:
-                response_list.append(tmp_res)
-    elif isinstance(tmp_res_lst, dict):
-        response_list = tmp_res_lst
-    elif isinstance(tmp_res_lst, np.ndarray):
-        response_list.append(tmp_res_lst.tolist())
-    else:
-        response_list.append(tmp_res_lst)
-    for res in list(response_list):
-        if type(res) is bytes:
-            response_list.remove(res)
-            res = str(res)
-            response_list.append(res)
-            print('encoding bytes')
-    return response_list
-
-
 def _introspect_token(headers):
     """
     Decode the token and retrieve the user's details
@@ -209,32 +160,3 @@ def _get_user(cur, conn, headers):
         print(e)
     return user_id, user_name, short_name
 
-
-def _check_user_access(cur, conn, servable_uuid, user_name):
-    """
-    Determine whether this user has permission to invoke the servable
-
-    :return str: site
-    """
-    site = None
-    try:
-        cur.execute("SELECT * from servables where uuid = '%s'" % servable_uuid)
-        rows = cur.fetchall()
-        for r in rows:
-            site = r['servable']
-            if r['protected']:
-                if not user_name:
-                    continue
-                query = "SELECT * from servables, users, servable_whitelist where users.globus_name = '%s' and " \
-                        "users.id = servable_whitelist.user_id and servables.uuid = '%s' and servables.id = " \
-                        "servable_whitelist.servable_id" % (user_name, r['uuid'])
-                print(query)
-                cur.execute(query)
-                prot_rows = cur.fetchall()
-                if len(prot_rows) > 0:
-                    return site
-            else:
-                return site
-    except Exception as e:
-        print(e)
-    return None
