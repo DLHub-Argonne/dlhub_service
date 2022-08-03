@@ -44,7 +44,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
         exec_flag = 2
         site = []
         for s in servable_uuid:
-            site.append(check_user_access(cur, conn, s, user_name))
+            site.append(_check_user_access(cur, conn, s, user_name))
     else:
         site = _check_user_access(cur, conn, servable_uuid, user_name)
         #exec_flag = 2
