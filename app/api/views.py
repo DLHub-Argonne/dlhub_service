@@ -452,6 +452,18 @@ def get_namespaces():
     return json.dumps(res)
 
 
+@api.route("/servables/<servable_namespace>/<servable_name>", methods=['POST'])
+def api_edit_servable(servable_namespace, servable_name):
+    """
+    Edit a servable
+
+    Args:
+        servable_namespace (str): Namespace of servable
+        servable_name (str): Name of the servable
+    """
+    pass
+
+
 @api.route("/servables/<servable_namespace>/<servable_name>", methods=['DELETE'])
 def api_delete_servable(servable_namespace, servable_name):
     """
