@@ -37,7 +37,7 @@ def _perform_invocation(servable_uuid, request, type='test'):
         (str): JSON-formatted results of executing the servable
     """
 
-    user_id, user_name, short_name = _get_user(cur, conn, request.headers)
+    user_id, user_name, _ = _get_user(cur, conn, request.headers)
     site = None
     exec_flag = 1
     if isinstance(servable_uuid, list):
@@ -47,8 +47,8 @@ def _perform_invocation(servable_uuid, request, type='test'):
             site.append(_check_user_access(cur, conn, s, user_name))
     else:
         site = _check_user_access(cur, conn, servable_uuid, user_name)
-        #exec_flag = 2
-        #site = [site, site, site]
+        # exec_flag = 2
+        # site = [site, site, site]
 
     print(site)
     # Return errors if the user does not have access to the servable
@@ -194,7 +194,7 @@ def api_run_pipeline():
         servable_namespace = x.split('/')[0]
         servable_name = x.split('/')[1]
         resolved_servables.append(_resolve_namespace_model(cur, conn, servable_namespace, servable_name))
-        
+
     output = _perform_invocation(resolved_servables, request, type='run')
     return output
 
@@ -222,7 +222,7 @@ def publish_servables():
     if not request.json:
         try:
             posted_file = request.files['file']
-            posted_data = json.load(request.files['json'])             
+            posted_data = json.load(request.files['json'])
             storage_path = os.path.join("/mnt/tmp", secure_filename(posted_file.filename))
             posted_file.save(storage_path)
             input_data = posted_data
