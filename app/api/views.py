@@ -257,6 +257,18 @@ def publish_servables():
     shorthand_name = "{name}/{model}".format(name=short_name, model=model_name.replace(" ", "_"))
     input_data['dlhub']['shorthand_name'] = shorthand_name
 
+    # Return a dummy response if the input is a test
+    if input_data['dlhub']['test']:
+        # make private dummy reply
+        class DummyReply:
+            def __init__(self) -> None:
+                self.status_code = 200
+
+            def json(self) -> dict[str, str]:
+                return {"task_id": "bf06d72e-0478-11ed-97f9-4b1381555b22"}  # valid task id, status is known to be FAILED
+
+        return DummyReply()
+
     # Start publication flow
     flow_arn = PUBLISH_FLOW_ARN
     res = _start_flow(cur, conn, flow_arn, input_data)
