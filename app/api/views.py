@@ -6,6 +6,7 @@ import json
 import uuid
 import time
 import os
+import globus_sdk
 from config import _load_dlhub_client
 from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_model,
                     _check_user_access, _log_invocation, _get_dlhub_file_from_github,
@@ -452,45 +453,51 @@ def get_namespaces():
     return json.dumps(res)
 
 
-@api.route("/servables/<servable_namespace>/<servable_name>", methods=['POST'])
+@api.route("/servables/<servable_namespace>/<servable_name>", methods=['PUT', 'DELETE'])
 def api_edit_servable(servable_namespace, servable_name):
     """
-    Edit a servable
+    Edit a servable when the request method is PUT, or mark it deleted if the method is DELETE
 
     Args:
-        servable_namespace (str): Namespace of servable
+        servable_namespace (str): Namespace of the servable
         servable_name (str): Name of the servable
+    Return:
+        (string): JSON-encoded request result
     """
-    pass
-
-
-@api.route("/servables/<servable_namespace>/<servable_name>", methods=['DELETE'])
-def api_delete_servable(servable_namespace, servable_name):
-    """
-    Delete a servable
-
-    Args:
-        servable_namespace (str): Namespace of servable
-        servable_name (str): Name of the servable
-    """
-    user_id, user_name, short_name = _get_user(cur, conn, request.headers)
+    _, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
         abort(400, description="Error: You must be logged in to perform this function.")
 
     servable_uuid = _resolve_namespace_model(cur, conn, servable_namespace, servable_name)
 
-    query = "select * from servables here uuid = '{0}' and author = '{1}'".format(servable_uuid, user_id)
-    cur.execute(query)
-    rows = cur.fetchall()
-    if len(rows) == 0:
-        return json.dumps({'status':'Failed to delete: permission denied or no servable found.'})
+    if short_name != servable_namespace:
+        abort(403, description="Error: You do not have permission to edit this servable.")
 
-    query = "update servables set status = 'DELETED' where uuid = '{0}'".format(servable_uuid)
-    try:
-        cur.execute(query)
-        conn.commit()
-    except Exception as e:
-        print(e)
-        return json.dumps({"InternalError": e})
+    scopes = ["urn:globus:auth:scope:search.api.globus.org:all"]
+    cc_authorizer = globus_sdk.ClientCredentialsAuthorizer(_load_dlhub_client(), scopes)
+    sc = globus_sdk.SearchClient(authorizer=cc_authorizer)
 
-    return json.dumps({'status': 'done'})
+    index_id = "847c9105-18a0-4ffb-8a71-03dd76dfcc9d"
+    res = sc.search(index_id, f"dlhub.id: {servable_uuid}", advanced=True)
+    res = res.data
+
+    if res["count"] != 1:
+        abort(400, description="Error: Query did not discover exactly one servable.")
+
+    document = res["gmeta"][0]
+    if len(document["entries"]) != 1:
+        abort(501, description="Error: Support for multiple entries is not yet implemented.")
+
+    subject = document["subject"]
+    visibility = document["entries"][0]["content"]["dlhub"]["visible_to"]
+
+    if request.method == "PUT":
+        new_metadata = request.json
+    else:
+        document["entries"][0]["content"]["dlhub"]["deleted"] = True
+        document["entries"][0]["content"]["dlhub"]["deleted_date"] = int(round(time.time() * 1000))
+        new_metadata = document["entries"][0]["content"]
+
+    res = sc.update_entry(index_id, {"subject": subject, "visible_to": visibility, "content": new_metadata})
+
+    return json.dumps(res)
