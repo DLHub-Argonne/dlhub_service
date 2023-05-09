@@ -13,6 +13,7 @@ from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_m
 from flask import Blueprint, request, abort, jsonify
 from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
+from garden_ai import GardenClient  # additional dependency
 
 
 from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
@@ -482,3 +483,29 @@ def api_delete_servable(servable_namespace, servable_name):
         return json.dumps({"InternalError": e})
 
     return json.dumps({'status': 'done'})
+
+@api.route("/servables/<servable_namespace>/<servable_name>", methods=['GET'])
+def api_register_garden_model(servable_namespace, servable_name):
+    """
+    Register the model of the provided servable with Garden, provided the request comes from the owner
+
+    Args:
+        servable_namespace (str): Namespace of the servable
+        servable_name (str): Name of the servable
+    Return:
+        (string): JSON-encoded request result
+    """
+    _, user_name, short_name = _get_user(cur, conn, request.headers)
+    if not user_name:
+        abort(400, description="Error: You must be logged in to perform this function.")
+
+    if short_name != servable_namespace:
+        abort(403, description="Error: You do not have permission to retrieve this data.")
+
+    metadata = request.json
+    kwargs = {"flavor": metadata["flavor"], "extra_pip_requirements": metadata["pip_reqs"]}
+
+    client = GardenClient()
+    res = client.log_model(f"{metadata['dlhub']['build_location']}/model.pkl", servable_name, **kwargs)  # does not work for different filenames
+
+    return json.dumps({"full_model_name": res})
