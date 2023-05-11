@@ -14,6 +14,7 @@ from flask import Blueprint, request, abort, jsonify
 from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
 from garden_ai import GardenClient  # additional dependency
+from gargen_ai.mlmodel import LocalModel
 
 
 from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
@@ -493,7 +494,7 @@ def api_register_garden_model(servable_namespace, servable_name):
         servable_namespace (str): Namespace of the servable
         servable_name (str): Name of the servable
     Return:
-        (string): JSON-encoded request result
+        (string): JSON-encoded RegisteredModel object
     """
     _, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
@@ -503,9 +504,14 @@ def api_register_garden_model(servable_namespace, servable_name):
         abort(403, description="Error: You do not have permission to retrieve this data.")
 
     metadata = request.json
-    kwargs = {"flavor": metadata["flavor"], "extra_pip_requirements": metadata["pip_reqs"]}
 
     client = GardenClient()
-    res = client.log_model(f"{metadata['dlhub']['build_location']}/model.pkl", servable_name, **kwargs)  # does not work for different filenames
+    local_model = LocalModel(model_name=metadata["dlhub"]["name"],
+                             flavor=metadata["flavor"],
+                             extra_pip_requirements=metadata["pip_reqs"],
+                             local_path=f"{metadata['dlhub']['build_location']}/model.pkl",  # does not work for different filenames
+                             user_email=client.get_email())  # problem with authentication. need a way for script to pass user identity
 
-    return json.dumps({"full_model_name": res})
+    res = client.register_model(local_model)
+
+    return json.dumps(res.dict())
