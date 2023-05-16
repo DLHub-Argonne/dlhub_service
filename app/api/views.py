@@ -10,11 +10,9 @@ from config import _load_dlhub_client
 from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_model,
                     _check_user_access, _log_invocation, _get_dlhub_file_from_github,
                     _create_task)
-from flask import Blueprint, request, abort, jsonify
+from flask import Blueprint, request, abort, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
-from garden_ai import GardenClient  # additional dependency
-from gargen_ai.mlmodel import LocalModel
 
 
 from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
@@ -485,16 +483,16 @@ def api_delete_servable(servable_namespace, servable_name):
 
     return json.dumps({'status': 'done'})
 
-@api.route("/servables/<servable_namespace>/<servable_name>", methods=['GET'])
-def api_register_garden_model(servable_namespace, servable_name):
+@api.route("/servables/<servable_namespace>", methods=['GET'])
+def api_retrieve_model(servable_namespace, servable_name):
     """
-    Register the model of the provided servable with Garden, provided the request comes from the owner
+    Retrieve the model of the provided servable, provided the request comes from the owner
 
     Args:
         servable_namespace (str): Namespace of the servable
         servable_name (str): Name of the servable
     Return:
-        (string): JSON-encoded RegisteredModel object
+        (Response): The content of the serialized model file
     """
     _, user_name, short_name = _get_user(cur, conn, request.headers)
     if not user_name:
@@ -503,15 +501,8 @@ def api_register_garden_model(servable_namespace, servable_name):
     if short_name != servable_namespace:
         abort(403, description="Error: You do not have permission to retrieve this data.")
 
-    metadata = request.json
-
-    client = GardenClient()
-    local_model = LocalModel(model_name=metadata["dlhub"]["name"],
-                             flavor=metadata["flavor"],
-                             extra_pip_requirements=metadata["pip_reqs"],
-                             local_path=f"{metadata['dlhub']['build_location']}/model.pkl",  # does not work for different filenames
-                             user_email=client.get_email())  # problem with authentication. need a way for script to pass user identity
-
-    res = client.register_model(local_model)
-
-    return json.dumps(res.dict())
+    return send_from_directory(request.json["build_location"],
+                               request.json["filename"],
+                               mimetype="application/octet-stream",
+                               as_attachment=True,
+                               attachment_filename="model.pkl")
