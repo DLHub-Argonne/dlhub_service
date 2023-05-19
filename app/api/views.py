@@ -483,7 +483,7 @@ def api_delete_servable(servable_namespace, servable_name):
 
     return json.dumps({'status': 'done'})
 
-@api.route("/servables/<servable_namespace>", methods=['GET'])
+@api.route("/servables/<servable_namespace>/<servable_name>", methods=['GET'])
 def api_retrieve_model(servable_namespace, servable_name):
     """
     Retrieve the model of the provided servable, provided the request comes from the owner
