@@ -11,10 +11,11 @@ from config import _load_dlhub_client
 from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_model,
                     _check_user_access, _log_invocation, _get_dlhub_file_from_github,
                     _create_task)
-from flask import Blueprint, request, abort, jsonify, make_response
+from flask import Blueprint, request, abort, jsonify, send_from_directory, make_response
 from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
 
+import globus_sdk
 
 from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
 
@@ -502,20 +503,33 @@ def api_retrieve_model(servable_namespace, servable_name):
     if short_name != servable_namespace:
         abort(403, description="Error: You do not have permission to retrieve this data.")
 
-    subprocess.run(["docker", "pull", request.json["ecr_uri"]])
-    workdir = subprocess.run(["docker", "image", "inspect", "-f", "'{{.Config.WorkingDir}}'", request.json["ecr_uri"]], capture_output=True, encoding="utf-8").stdout.strip()
-    container = subprocess.run(["docker", "run", "-d", "--rm", request.json["ecr_uri"]], capture_output=True, encoding="utf-8").stdout.strip()
+    servable_uuid = _resolve_namespace_model(cur, conn, servable_namespace, servable_name)
+
+    scopes = ["urn:globus:auth:scope:search.api.globus.org:search"]
+    cc_authorizer = globus_sdk.ClientCredentialsAuthorizer(_load_dlhub_client(), scopes)
+    sc = globus_sdk.SearchClient(authorizer=cc_authorizer)
+
+    index_id = "847c9105-18a0-4ffb-8a71-03dd76dfcc9d"
+    res = sc.search(index_id, f"dlhub.id: {servable_uuid}", advanced=True)
+    res = res.data
+
+    if res["count"] != 1:
+        abort(400, description="Error: Query did not discover exactly one servable.")
+
+    ecr_uri = res["gmeta"][0]["entries"][0]["content"]["dlhub"]["ecr_uri"]
+
+    subprocess.run(["docker", "pull", ecr_uri])
+    workdir = subprocess.run(["docker", "image", "inspect", "-f", "'{{.Config.WorkingDir}}'", ecr_uri], capture_output=True, encoding="utf-8").stdout.strip()
+    container = subprocess.run(["docker", "run", "-d", "--rm", ecr_uri], capture_output=True, encoding="utf-8").stdout.strip()
     subprocess.run(["docker", "cp", f"{container}:{workdir}/{request.json['filename']}", "model.pkl"])
     subprocess.run(["docker", "kill", container])
-    subprocess.run(["docker", "rmi", request.json["ecr_uri"]])
+    subprocess.run(["docker", "rmi", ecr_uri])
 
-    with open("model.pkl", "rb") as f:
-        model_serial = f.read()
-
+    res = send_from_directory(".",
+                              "model.pkl",
+                              mimetype="application/octet-stream",
+                              as_attachment=True,
+                              attachment_filename="model.pkl")
     os.remove("model.pkl")
-
-    res = make_response(model_serial)
-    res.headers.set("Content-Type", "application/octet-stream")
-    res.headers.set("Content-Disposition", "attachment", filename="model.pkl")
 
     return res
