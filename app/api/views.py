@@ -1,4 +1,5 @@
 import jsonpickle
+import subprocess
 import threading
 import pickle
 import boto3
@@ -10,7 +11,7 @@ from config import _load_dlhub_client
 from .utils import (_get_user, _start_flow, _decode_result, _resolve_namespace_model,
                     _check_user_access, _log_invocation, _get_dlhub_file_from_github,
                     _create_task)
-from flask import Blueprint, request, abort, jsonify, send_from_directory
+from flask import Blueprint, request, abort, jsonify, make_response
 from werkzeug.utils import secure_filename
 from .zmqserver import ZMQServer
 
@@ -501,8 +502,20 @@ def api_retrieve_model(servable_namespace, servable_name):
     if short_name != servable_namespace:
         abort(403, description="Error: You do not have permission to retrieve this data.")
 
-    return send_from_directory(request.json["build_location"],
-                               request.json["filename"],
-                               mimetype="application/octet-stream",
-                               as_attachment=True,
-                               attachment_filename="model.pkl")
+    subprocess.run(["docker", "pull", request.json["ecr_uri"]])
+    workdir = subprocess.run(["docker", "image", "inspect", "-f", "'{{.Config.WorkingDir}}'", request.json["ecr_uri"]], capture_output=True, encoding="utf-8").stdout.strip()
+    container = subprocess.run(["docker", "run", "-d", "--rm", request.json["ecr_uri"]], capture_output=True, encoding="utf-8").stdout.strip()
+    subprocess.run(["docker", "cp", f"{container}:{workdir}/{request.json['filename']}", "model.pkl"])
+    subprocess.run(["docker", "kill", container])
+    subprocess.run(["docker", "rmi", request.json["ecr_uri"]])
+
+    with open("model.pkl", "rb") as f:
+        model_serial = f.read()
+
+    os.remove("model.pkl")
+
+    res = make_response(model_serial)
+    res.headers.set("Content-Type", "application/octet-stream")
+    res.headers.set("Content-Disposition", "attachment", filename="model.pkl")
+
+    return res
