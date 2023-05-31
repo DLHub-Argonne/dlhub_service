@@ -1,3 +1,4 @@
+import subprocess
 import boto3
 import json
 import uuid
@@ -10,6 +11,8 @@ from flask import Blueprint, request, abort, jsonify
 from werkzeug.utils import secure_filename
 
 from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
+
+import globus_sdk
 
 conn, cur = _get_db_connection()
 
@@ -328,3 +331,50 @@ def api_delete_servable(servable_namespace, servable_name):
         return json.dumps({"InternalError": e})
 
     return json.dumps({'status': 'done'})
+
+
+@api.route("/servables/<servable_namespace>/<servable_name>", methods=['GET'])
+def api_retrieve_model(servable_namespace, servable_name):
+    """
+    Retrieve the model of the provided servable, provided the request comes from the owner
+
+    Args:
+        servable_namespace (str): Namespace of the servable
+        servable_name (str): Name of the servable
+    Return:
+        (Response): The content of the serialized model file
+    """
+    _, user_name, short_name = _get_user(cur, conn, request.headers)
+    if not user_name:
+        abort(400, description="Error: You must be logged in to perform this function.")
+
+    if short_name != servable_namespace:
+        abort(403, description="Error: You do not have permission to retrieve this data.")
+
+    servable_uuid = _resolve_namespace_model(cur, conn, servable_namespace, servable_name)
+
+    scopes = ["urn:globus:auth:scope:search.api.globus.org:search"]
+    cc_authorizer = globus_sdk.ClientCredentialsAuthorizer(_load_dlhub_client(), scopes)
+    sc = globus_sdk.SearchClient(authorizer=cc_authorizer)
+
+    index_id = "847c9105-18a0-4ffb-8a71-03dd76dfcc9d"
+    res = sc.search(index_id, f"dlhub.id: {servable_uuid}", advanced=True)
+    res = res.data
+
+    ecr_uri = res["gmeta"][0]["entries"][0]["content"]["dlhub"]["ecr_uri"]
+
+    subprocess.run(["docker", "pull", ecr_uri])
+    workdir = subprocess.run(["docker", "image", "inspect", "-f", "{{.Config.WorkingDir}}", ecr_uri], stdout=subprocess.PIPE, encoding="utf-8").stdout.strip()
+    container = subprocess.run(["docker", "run", "-d", "--rm", ecr_uri], stdout=subprocess.PIPE, encoding="utf-8").stdout.strip()
+    subprocess.run(["docker", "cp", f"{container}:{workdir}/{request.json['filename']}", "model.pkl"])
+    subprocess.run(["docker", "kill", container])
+    subprocess.run(["docker", "rmi", ecr_uri])
+
+    res = send_file("model.pkl",
+                    mimetype="application/octet-stream",
+                    as_attachment=True,
+                    attachment_filename="model.pkl")
+
+    os.remove("model.pkl")
+
+    return res
