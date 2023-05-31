@@ -6,7 +6,7 @@ import os
 from config import _load_dlhub_client
 from .utils import (_get_user, _start_flow, _resolve_namespace_model, _get_dlhub_file_from_github,
                     create_presigned_post)
-from flask import Blueprint, request, abort, jsonify, send_file
+from flask import Blueprint, request, abort, jsonify
 from werkzeug.utils import secure_filename
 
 from config import (_get_db_connection, PUBLISH_FLOW_ARN, PUBLISH_REPO_FLOW_ARN)
