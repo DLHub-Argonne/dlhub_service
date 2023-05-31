@@ -1,5 +1,8 @@
 #!/bin/bash
-source activate dlhub
+#source activate dlhub
+source /home/ubuntu/.miniconda3/bin/activate /home/ubuntu/.miniconda3/envs/dlhub
+#source activate /home/ubuntu/.miniconda3/envs/dlhub
+echo "path is $PATH"
 source /home/ubuntu/dlhub.sh
 
 NAME="DLHub"
